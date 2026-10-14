@@ -1,0 +1,15 @@
+{
+  "excel": "logs/gate_log_%Y-%m.xlsx",
+  "snapshots": "logs/snapshots",
+  "fps": 2,
+  "min_hits": 2,
+  "cooldown_s": 300,
+  "accept_unverified": true,
+  "use_cuda": false,
+  "cameras": [
+    {"name": "Gate 1 Entry", "direction": "IN",  "location": "Main gate, Lane 1",
+     "source": "rtsp://USER:PASSWORD@192.168.1.64:554/Streaming/Channels/101"},
+    {"name": "Gate 1 Exit",  "direction": "OUT", "location": "Main gate, Lane 2",
+     "source": "rtsp://USER:PASSWORD@192.168.1.65:554/Streaming/Channels/101"}
+  ]
+}
