@@ -39,3 +39,5 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+# Local Claude Code preview config
+.claude/

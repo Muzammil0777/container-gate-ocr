@@ -1,4 +1,5 @@
-"""Read container codes in one image:  python single_frame_process.py -i images/container1.png"""
+"""Read container codes and Saudi plates in one image:
+    python single_frame_process.py -i images/ksa_mrsu_3231uta.jpg"""
 import argparse
 
 import cv2
@@ -23,8 +24,11 @@ def main():
         print(f"{format_code(c['code'])}  {c['size_type'] or '':5} {status}  (confidence {c['score']})")
     if not out['codes']:
         print('No container code found.')
+    for p in out['plates']:
+        status = 'Arabic + Latin match' if p['verified'] else 'Latin only'
+        print(f"plate {p['plate']}  ({p['arabic']})  {status}  (confidence {p['score']})")
     print(f"OCR took {out['ms']} ms")
-    cv2.imwrite(args.output, draw(img, out['codes']))
+    cv2.imwrite(args.output, draw(img, out['codes'], out['plates']))
     if args.show:
         cv2.imshow('result', img)
         cv2.waitKey(0)

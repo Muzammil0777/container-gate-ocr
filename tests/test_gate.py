@@ -10,39 +10,89 @@ def code(c, valid=True, score=0.9):
     return {'code': c, 'valid': valid, 'size_type': '45G1', 'score': score, 'box': (10, 10, 50, 20)}
 
 
-def test_tracker_votes_then_cools_down():
-    t = GateTracker(min_hits=2, window_s=10, cooldown_s=60)
-    assert t.update([code('TRLU6689574')], FRAME, now=0) == []
-    events = t.update([code('TRLU6689574', score=0.95)], FRAME, now=1)
-    assert [e[0]['score'] for e in events] == [0.95]       # best read is kept
-    assert t.update([code('TRLU6689574')] * 2, FRAME, now=5) == []   # truck still there
-    assert t.update([code('TRLU6689574')], FRAME, now=100) == []     # back: needs votes again
-    assert len(t.update([code('TRLU6689574')], FRAME, now=101)) == 1
+def plate(digits='3231', letters='UTA', verified=True, score=0.9):
+    return {'plate': f'{digits} {letters}', 'digits': digits, 'letters': letters, 'arabic': 'و ط ا ٣٢٣١',
+            'verified': verified, 'score': score, 'box': (20, 60, 40, 20)}
 
 
-def test_tracker_hits_expire():
-    t = GateTracker(min_hits=2, window_s=10)
-    t.update([code('TRLU6689574')], FRAME, now=0)
-    assert t.update([code('TRLU6689574')], FRAME, now=20) == []      # too far apart
+def run(tracker, frames):
+    """frames: [(now, codes, plates)] -> [(now, event)]"""
+    return [(now, e) for now, cs, ps in frames for e in tracker.update(cs, FRAME, now, ps)]
 
 
-def test_tracker_unverified_needs_double_votes():
+def test_plate_and_container_make_one_event():
     t = GateTracker(min_hits=2)
-    seen = [t.update([code('TCNU634580?', valid=False)], FRAME, now=i) for i in range(4)]
-    assert [len(e) for e in seen] == [0, 0, 0, 1]
+    events = run(t, [(0, [code('MRSU4425761')], [plate()]),
+                     (1, [code('MRSU4425761', score=0.95)], [plate()]),
+                     (2, [code('MRSU4425761')], [plate()])])        # truck still in view
+    assert len(events) == 1
+    now, e = events[0]
+    assert now == 1 and e['code']['code'] == 'MRSU4425761' and e['plate']['plate'] == '3231 UTA'
+    assert e['code']['score'] == 0.95                                # best read is kept
+
+
+def test_container_only_truck_is_logged_after_gap():
+    t = GateTracker(min_hits=2, gap_s=5)
+    events = run(t, [(0, [code('TRLU6689574')], []), (1, [code('TRLU6689574')], []),
+                     (3, [], []), (7, [], [])])
+    assert [(now, e['code']['code'], e['plate']) for now, e in events] == [(7, 'TRLU6689574', None)]
+
+
+def test_plate_only_truck_after_max_wait():
+    t = GateTracker(min_hits=2, max_wait_s=10)
+    frames = [(s, [], [plate('5188', 'VDA')]) for s in range(12)]
+    assert [now for now, _ in run(t, frames)] == [11]               # first confirmed at 1, +10 s
+
+
+def test_cooldown_then_next_truck():
+    t = GateTracker(min_hits=2, cooldown_s=60)
+    first = run(t, [(0, [code('TRLU6689574')], [plate()]), (1, [code('TRLU6689574')], [plate()])])
+    parked = run(t, [(s, [code('TRLU6689574')], [plate()]) for s in range(2, 30)])
+    nxt = run(t, [(30, [code('TCNU6345807')], [plate('5489', 'EXA')]),
+                  (31, [code('TCNU6345807')], [plate('5489', 'EXA')])])
+    assert len(first) == 1 and parked == []
+    assert [(e['code']['code'], e['plate']['plate']) for _, e in nxt] == [('TCNU6345807', '5489 EXA')]
+
+
+def test_unverified_needs_double_votes():
+    t = GateTracker(min_hits=2, gap_s=100, max_wait_s=100)
+    assert run(t, [(i, [code('TCNU634580?', valid=False)], [plate(verified=False)]) for i in range(3)]) == []
+    assert len(run(t, [(3, [code('TCNU634580?', valid=False)], [plate(verified=False)])])) == 1
     strict = GateTracker(min_hits=2, accept_unverified=False)
-    assert all(strict.update([code('TCNU634580?', valid=False)], FRAME, now=i) == [] for i in range(9))
+    assert run(strict, [(i, [code('TCNU634580?', valid=False)], []) for i in range(9)]) == []
 
 
-def test_excel_log(tmp_path):
+def test_flush_emits_visit_in_progress():
+    t = GateTracker(min_hits=2)
+    run(t, [(0, [code('TRLU6689574')], []), (1, [code('TRLU6689574')], [])])
+    assert [e['code']['code'] for e in t.flush(2)] == ['TRLU6689574']
+
+
+def event(c=None, p=None):
+    return {'code': c, 'plate': p, 'frame': FRAME, 'plate_frame': FRAME if p else None}
+
+
+def test_excel_log_english(tmp_path):
     log = ExcelLog(str(tmp_path / 'gate_%Y.xlsx'), tmp_path / 'snaps')
-    log.log(code('TRLU6689574'), FRAME, camera='Gate 1', location='North', direction='IN')
-    row = log.log(code('TCNU6345807'), FRAME, camera='Gate 1', location='North', direction='OUT')
-    ws = load_workbook(next(tmp_path.glob('gate_*.xlsx'))).active
-    rows = list(ws.values)
-    assert rows[1][2:8] == ('TRLU 668957 4', 'YES', '45G1', 'IN', 'Gate 1', 'North')
-    assert rows[2][5] == 'OUT' and len(rows) == 3
-    assert len(list((tmp_path / 'snaps').rglob('*.jpg'))) == 2 and row['Snapshot'].endswith('.jpg')
+    log.log(event(code('TRLU6689574'), plate()), camera='Gate 1', location='North', direction='IN')
+    log.log(event(code('TCNU6345807')), camera='Gate 1', location='North', direction='OUT')
+    rows = list(load_workbook(next(tmp_path.glob('gate_*.xlsx'))).active.values)
+    assert rows[0][:7] == ('Date', 'Time', 'Direction', 'Plate', 'Plate (Arabic)', 'Plate Check', 'Container Code')
+    assert rows[1][2:9] == ('IN', '3231 UTA', 'و ط ا ٣٢٣١', 'Arabic + Latin match', 'TRLU 668957 4', 'YES', '45G1')
+    assert rows[1][12:] == ('open image', 'open image')
+    assert rows[2][2:4] == ('OUT', None) and rows[2][13] is None   # no plate on this truck
+    assert len(list((tmp_path / 'snaps').rglob('*.jpg'))) == 3      # 2 snapshots + 1 plate crop
+
+
+def test_excel_log_arabic_and_column_mismatch(tmp_path):
+    path = str(tmp_path / 'gate.xlsx')
+    ExcelLog(path, tmp_path / 's').log(event(code('TRLU6689574')), direction='IN')       # English file
+    ExcelLog(path, tmp_path / 's', language='ar').log(event(None, plate()), direction='IN')
+    ar = load_workbook(tmp_path / 'gate_2.xlsx').active                                  # new file, not mixed
+    rows = list(ar.values)
+    assert ar.sheet_view.rightToLeft and rows[0][:3] == ('التاريخ', 'الوقت', 'الاتجاه')
+    assert rows[1][2:6] == ('دخول', '3231 UTA', 'و ط ا ٣٢٣١', 'مطابق عربي ولاتيني')
+    assert len(list(load_workbook(path).active.values)) == 2                             # English untouched
 
 
 def test_excel_locked_rows_are_queued_not_lost(tmp_path, monkeypatch):
@@ -50,8 +100,8 @@ def test_excel_locked_rows_are_queued_not_lost(tmp_path, monkeypatch):
     log = ExcelLog(str(tmp_path / 'gate.xlsx'), tmp_path / 'snaps')
     real_save = wbmod.Workbook.save
     monkeypatch.setattr(wbmod.Workbook, 'save', lambda *a: (_ for _ in ()).throw(PermissionError))
-    log.log(code('TRLU6689574'), FRAME)
+    log.log(event(code('TRLU6689574')))
     assert len(log.pending) == 1
     monkeypatch.setattr(wbmod.Workbook, 'save', real_save)
-    log.log(code('TCNU6345807'), FRAME)
+    log.log(event(code('TCNU6345807')))
     assert log.pending == [] and len(list(load_workbook(tmp_path / 'gate.xlsx').active.values)) == 3

@@ -1,5 +1,6 @@
 """Watch CCTV / RTSP cameras (or a video file / webcam) and log every truck that passes
-to Excel with date, time, direction, camera, location and a snapshot.
+to Excel: date, time, direction, Saudi number plate (Latin + Arabic), container code,
+camera, location and snapshots.
 
     python cctv.py --config cameras.json
     python cctv.py --source videos/video1.mp4 --direction IN --location "Gate 1" --show
@@ -22,6 +23,10 @@ DEFAULTS = {
     'motion_threshold': 2.0,    # mean pixel change below which an empty scene is skipped...
     'idle_check_s': 2,          # ...but still checked this often (a truck parked at the barrier)
     'max_side': 1920, 'use_cuda': False,
+    'plates': True,             # read Saudi number plates
+    'language': 'en',           # Excel headers/values: 'en' or 'ar'
+    'gap_s': 5,                 # a visit ends when nothing new was read for this long...
+    'max_wait_s': 10,           # ...or this long after the first confirmed read
 }
 
 
@@ -53,7 +58,9 @@ class LatestFrame:
 
 def watch(cam, cfg, recognizer, ocr_lock, log, previews, stop):
     name, source = cam['name'], cam['source']
-    tracker = GateTracker(cfg['min_hits'], cfg['window_s'], cfg['cooldown_s'], cfg['accept_unverified'])
+    tracker = GateTracker(cfg['min_hits'], cfg['window_s'], cfg['cooldown_s'], cfg['accept_unverified'],
+                          cfg['gap_s'], cfg['max_wait_s'])
+    where = (name, cam.get('location', ''), cam.get('direction', ''))
     is_file = isinstance(source, str) and Path(source).is_file()
     if is_file:
         cap = cv2.VideoCapture(source)
@@ -83,19 +90,26 @@ def watch(cam, cfg, recognizer, ocr_lock, log, previews, stop):
         if moving or busy or now - last_ocr >= cfg['idle_check_s']:
             last_ocr = now
             with ocr_lock:
-                codes = recognizer(frame)['codes']
-            busy = bool(codes)
-            for code, best in tracker.update(codes, frame, now):
-                row = log.log(code, best, name, cam.get('location', ''), cam.get('direction', ''))
-                print(f"[cctv] {row['Date']} {row['Time']}  {row['Direction']:<4} {row['Container Code']}"
-                      f"  {row['Camera']} / {row['Location']}")
+                out = recognizer(frame, plates=cfg['plates'])
+            busy = bool(out['codes'] or out['plates'])
+            _log(tracker.update(out['codes'], frame, now, out['plates']), log, *where)
             if previews is not None:
-                previews[name] = draw(frame.copy(), codes)
+                previews[name] = draw(frame.copy(), out['codes'], out['plates'])
+        else:
+            _log(tracker.update([], frame, now), log, *where)  # lets a finished visit end
         if not is_file:
             time.sleep(max(0.0, 1 / cfg['fps'] - (time.time() - t0)))
+    _log(tracker.flush(), log, *where)
     if not is_file:
         stream.stopped = True
     print(f"[cctv] {name}: stopped")
+
+
+def _log(events, log, camera, location, direction):
+    for e in events:
+        row = log.log(e, camera, location, direction)
+        print(f"[cctv] {row['date']} {row['time']}  {row['direction']:<4} plate {row['plate'] or '-':<9} "
+              f"container {row['container'] or '-':<14}  {camera} / {location}")
 
 
 def _redact(source):
@@ -127,7 +141,7 @@ def main():
         ap.error('give --config or --source')
 
     recognizer, ocr_lock = Recognizer(cfg['max_side'], cfg['use_cuda']), threading.Lock()
-    log = ExcelLog(cfg['excel'], cfg['snapshots'])
+    log = ExcelLog(cfg['excel'], cfg['snapshots'], cfg['language'])
     previews, stop = ({} if args.show else None), threading.Event()
     threads = [threading.Thread(target=watch, args=(cam, cfg, recognizer, ocr_lock, log, previews, stop),
                                 daemon=True) for cam in cfg['cameras']]

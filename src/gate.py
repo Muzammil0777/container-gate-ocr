@@ -1,4 +1,5 @@
-"""Turn per-frame reads into gate events and log them to Excel with a snapshot."""
+"""Turn per-frame reads into one gate event per truck (plate + container) and log it to
+Excel with snapshots."""
 import threading
 import time
 from collections import defaultdict
@@ -9,73 +10,154 @@ import cv2
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font
 
+from src.i18n import t
 from src.iso6346 import format_code
 from src.recognizer import draw
 
-COLUMNS = ['Date', 'Time', 'Container Code', 'Check Digit OK', 'Size/Type', 'Direction',
-           'Camera', 'Location', 'Confidence', 'Snapshot']
+COLUMNS = ['date', 'time', 'direction', 'plate', 'plate_ar', 'plate_check', 'container',
+           'check_digit', 'size_type', 'camera', 'location', 'confidence', 'snapshot', 'plate_image']
+LINKS = ('snapshot', 'plate_image')
+
+
+class _Votes:
+    """Reads of one kind (container codes or plates) during a visit."""
+
+    def __init__(self):
+        self.hits = defaultdict(list)  # key -> [timestamps]
+        self.best = {}                 # key -> (score, item, frame)
+
+    def add(self, key, item, frame, now, window_s):
+        self.hits[key] = [t for t in self.hits[key] if now - t <= window_s] + [now]
+        if key not in self.best or item['score'] > self.best[key][0]:
+            self.best[key] = (item['score'], item, frame.copy())
+
+    def confirmed(self, need):
+        """Most-read key that has enough reads (need(item) -> required count), or None."""
+        ok = [k for k in self.hits if len(self.hits[k]) >= need(self.best[k][1])]
+        return max(ok, key=lambda k: (len(self.hits[k]), self.best[k][0])) if ok else None
 
 
 class GateTracker:
-    """A truck passing a camera is seen in many frames. Emit one event per code once it was
-    read `min_hits` times within `window_s`, then ignore it for `cooldown_s` (truck waiting
-    at the barrier). Codes without a confirmed check digit (the boxed digit is often
-    unreadable on CCTV) need 2x the hits; they are logged flagged rather than dropped,
-    since a missing truck is worse than a row to double-check against its snapshot."""
+    """A truck passing a camera is seen in many frames. Plate and container code are each
+    confirmed once read `min_hits` times within `window_s` (2x for an unconfirmed check digit
+    or a plate whose Arabic row didn't match). One event is emitted per truck visit:
+    - as soon as both are confirmed, or
+    - with whatever was confirmed after `max_wait_s`, or when nothing new has been read for
+      `gap_s` (truck left, or one without container / with an unreadable plate).
+    Logged codes and plates are then ignored for `cooldown_s` (truck waiting at the barrier).
+    Call update() for every processed frame, also empty ones, so visits can end."""
 
-    def __init__(self, min_hits=2, window_s=15, cooldown_s=300, accept_unverified=True):
+    def __init__(self, min_hits=2, window_s=15, cooldown_s=300, accept_unverified=True,
+                 gap_s=5, max_wait_s=10):
         self.min_hits, self.window_s, self.cooldown_s = min_hits, window_s, cooldown_s
-        self.accept_unverified = accept_unverified
-        self.hits = defaultdict(list)   # code -> [timestamps]
-        self.best = {}                  # code -> (score, code dict, frame)
-        self.logged = {}                # serial -> last event time
+        self.accept_unverified, self.gap_s, self.max_wait_s = accept_unverified, gap_s, max_wait_s
+        self.logged = {}   # 'serial' or 'plate' key -> last event time
+        self.visit = None
 
-    def update(self, codes, frame, now=None):
-        """Feed one frame's codes; returns a list of (code dict, best frame) to log."""
+    def update(self, codes, frame, now=None, plates=()):
+        """Feed one frame's reads; returns a list of events. An event is a dict with
+        code (or None), plate (or None), frame, plate_frame."""
         now = time.time() if now is None else now
+        codes = [c for c in codes if (c['valid'] or self.accept_unverified)
+                 and not self._cooling(c['code'][4:10], now)]
+        plates = [p for p in plates if not self._cooling(p['digits'] + p['letters'], now)]
         events = []
-        for c in codes:
-            if not c['valid'] and not self.accept_unverified:
-                continue
-            code, serial = c['code'], c['code'][4:10]
-            if now - self.logged.get(serial, -1e18) < self.cooldown_s:
-                continue
-            self.hits[code] = [t for t in self.hits[code] if now - t <= self.window_s] + [now]
-            if code not in self.best or c['score'] > self.best[code][0]:
-                self.best[code] = (c['score'], c, frame.copy())
-            if len(self.hits[code]) >= self.min_hits * (1 if c['valid'] else 2):
-                _, best_c, best_frame = self.best.pop(code)
-                events.append((best_c, best_frame))
-                self.logged[serial] = now
-                # forget other spellings of this container
-                for k in [k for k in self.hits if k[4:10] == serial]:
-                    self.hits.pop(k)
-                    self.best.pop(k, None)
+        v = self.visit
+        if v and now - v['last'] > self.gap_s:  # visit over
+            events += self._emit(now)
+            v = None
+        if codes or plates:
+            if v is None:
+                v = self.visit = {'codes': _Votes(), 'plates': _Votes(), 'last': now, 'first_ok': None}
+            v['last'] = now
+            for c in codes:
+                v['codes'].add(c['code'], c, frame, now, self.window_s)
+            for p in plates:
+                v['plates'].add(p['digits'] + p['letters'], p, frame, now, self.window_s)
+        if v:
+            code, plate = self._confirmed()
+            if code or plate:
+                v['first_ok'] = v['first_ok'] or now
+                if (code and plate) or now - v['first_ok'] >= self.max_wait_s:
+                    events += self._emit(now)
         return events
+
+    def flush(self, now=None):
+        """Emit the visit in progress (end of a video file)."""
+        return self._emit(time.time() if now is None else now)
+
+    def _cooling(self, key, now):
+        return now - self.logged.get(key, -1e18) < self.cooldown_s
+
+    def _confirmed(self):
+        v, n = self.visit, self.min_hits
+        code = v['codes'].confirmed(lambda c: n if c['valid'] else 2 * n)
+        plate = v['plates'].confirmed(lambda p: n if p['verified'] else 2 * n)
+        return code, plate
+
+    def _emit(self, now):
+        if not self.visit:
+            return []
+        code, plate = self._confirmed()
+        v, self.visit = self.visit, None
+        if not (code or plate):
+            return []
+        c = v['codes'].best[code] if code else None
+        p = v['plates'].best[plate] if plate else None
+        if code:
+            self.logged[code[4:10]] = now
+        if plate:
+            self.logged[plate] = now
+        return [{'code': c and c[1], 'plate': p and p[1],
+                 'frame': (c or p)[2], 'plate_frame': p and p[2]}]
 
 
 class ExcelLog:
-    """Append-only Excel log. `path` may contain strftime codes, e.g. logs/gate_%Y-%m.xlsx
-    for one workbook per month. Thread-safe. If the workbook is open in Excel (locked on
-    Windows), rows are queued and written on the next append/flush instead of being lost."""
+    """Append-only Excel log, one row per truck. `path` may contain strftime codes, e.g.
+    logs/gate_%Y-%m.xlsx for one workbook per month. language 'en' or 'ar' sets headers and
+    values (Arabic sheets are right-to-left). Thread-safe. If the workbook is open in Excel
+    (locked on Windows), rows are queued and written on the next append/flush. A workbook
+    with different columns (older version, other language) is left alone and a new one
+    with a _2, _3... suffix is used."""
 
-    def __init__(self, path='logs/gate_log_%Y-%m.xlsx', snapshot_dir='logs/snapshots'):
-        self.path, self.snapshot_dir = path, Path(snapshot_dir)
+    def __init__(self, path='logs/gate_log_%Y-%m.xlsx', snapshot_dir='logs/snapshots', language='en'):
+        self.path, self.snapshot_dir, self.lang = path, Path(snapshot_dir), language
         self.pending = []
         self.lock = threading.Lock()
 
-    def log(self, code, frame, camera='camera', location='', direction='', when=None):
-        """Save the snapshot and append one row. Returns the row as a dict."""
+    def log(self, event, camera='camera', location='', direction='', when=None):
+        """Save the snapshots and append one row. Returns the row as {column key: value}."""
         when = when or datetime.now()
+        code, plate = event['code'], event['plate']
         day_dir = self.snapshot_dir / when.strftime('%Y-%m-%d')
         day_dir.mkdir(parents=True, exist_ok=True)
-        snap = day_dir / f"{when:%H%M%S}_{_safe(camera)}_{code['code'].rstrip('?')}.jpg"
-        cv2.imwrite(str(snap), draw(frame.copy(), [code]))
+        name = '_'.join(x for x in (code and code['code'].rstrip('?'),
+                                    plate and plate['digits'] + plate['letters']) if x)
+        snap = day_dir / f"{when:%H%M%S}_{_safe(camera)}_{name}.jpg"
+        cv2.imwrite(str(snap), draw(event['frame'].copy(), [code] if code else [], [plate] if plate else []))
+        plate_img = ''
+        if plate:
+            x, y, w, h = plate['box']
+            m = max(4, h // 4)
+            crop = event['plate_frame'][max(0, y - m):y + h + m, max(0, x - m):x + w + m]
+            if crop.size:
+                plate_img = day_dir / f"{when:%H%M%S}_{_safe(camera)}_{name}_plate.jpg"
+                f = max(1.0, 120 / crop.shape[0])
+                cv2.imwrite(str(plate_img), cv2.resize(crop, None, fx=f, fy=f, interpolation=cv2.INTER_CUBIC))
+                plate_img = str(plate_img.resolve())
+        L = self.lang
         row = {
-            'Date': when.strftime('%Y-%m-%d'), 'Time': when.strftime('%H:%M:%S'),
-            'Container Code': format_code(code['code']), 'Check Digit OK': 'YES' if code['valid'] else 'NO',
-            'Size/Type': code['size_type'] or '', 'Direction': direction, 'Camera': camera,
-            'Location': location, 'Confidence': code['score'], 'Snapshot': str(snap.resolve()),
+            'date': when.strftime('%Y-%m-%d'), 'time': when.strftime('%H:%M:%S'),
+            'direction': t(direction, L) if direction else '',
+            'plate': plate['plate'] if plate else '',
+            'plate_ar': plate['arabic'] if plate else '',
+            'plate_check': t('verified' if plate['verified'] else 'latin_only', L) if plate else '',
+            'container': format_code(code['code']) if code else '',
+            'check_digit': t('yes' if code['valid'] else 'no', L) if code else '',
+            'size_type': (code['size_type'] or '') if code else '',
+            'camera': camera, 'location': location,
+            'confidence': round(min(x['score'] for x in (code, plate) if x), 3),
+            'snapshot': str(snap.resolve()), 'plate_image': plate_img,
         }
         with self.lock:
             self.pending.append((when, row))
@@ -86,30 +168,42 @@ class ExcelLog:
         with self.lock:
             self._flush()
 
+    def _workbook(self, path):
+        """Open (or create) the workbook at path; on a column mismatch try path_2, path_3..."""
+        headers = [t(c, self.lang) for c in COLUMNS]
+        base, n = path, 1
+        while path.exists():
+            wb = load_workbook(path)
+            if [c.value for c in wb.active[1]] == headers:
+                return path, wb
+            n += 1
+            path = base.with_name(f"{base.stem}_{n}{base.suffix}")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        wb = Workbook()
+        ws = wb.active
+        ws.title = t('sheet', self.lang)
+        ws.sheet_view.rightToLeft = self.lang == 'ar'
+        ws.append(headers)
+        for cell in ws[1]:
+            cell.font = Font(bold=True)
+        ws.freeze_panes = 'A2'
+        return path, wb
+
     def _flush(self):
         while self.pending:
             when, row = self.pending[0]
-            path = Path(when.strftime(self.path))
             try:
-                if path.exists():
-                    wb = load_workbook(path)
-                    ws = wb.active
-                else:
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    wb = Workbook()
-                    ws = wb.active
-                    ws.title = 'Gate log'
-                    ws.append(COLUMNS)
-                    for cell in ws[1]:
-                        cell.font = Font(bold=True)
-                    ws.freeze_panes = 'A2'
+                path, wb = self._workbook(Path(when.strftime(self.path)))
+                ws = wb.active
                 ws.append([row[c] for c in COLUMNS])
-                link = ws.cell(row=ws.max_row, column=len(COLUMNS))
-                link.hyperlink, link.value, link.style = row['Snapshot'], 'open image', 'Hyperlink'
+                for key in LINKS:
+                    if row[key]:
+                        cell = ws.cell(row=ws.max_row, column=COLUMNS.index(key) + 1)
+                        cell.hyperlink, cell.value, cell.style = row[key], t('open_image', self.lang), 'Hyperlink'
                 wb.save(path)
             except PermissionError:
-                print(f"[gate] {path} is open in another program, {len(self.pending)} row(s) "
-                      f"queued; close it and they will be written on the next event.")
+                print(f"[gate] {when.strftime(self.path)} is open in another program, {len(self.pending)} "
+                      f"row(s) queued; close it and they will be written on the next event.")
                 return
             self.pending.pop(0)
 

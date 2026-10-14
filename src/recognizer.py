@@ -1,11 +1,17 @@
-"""Container code recognition on a whole frame: RapidOCR (PP-OCRv4, ONNX) + ISO 6346 parsing."""
+"""Container code + Saudi plate recognition on a whole frame: RapidOCR (PP-OCR, ONNX) +
+ISO 6346 and Saudi plate parsing."""
 import time
+from pathlib import Path
 
 import cv2
 import numpy as np
 from rapidocr_onnxruntime import RapidOCR
 
-from src.iso6346 import TO_DIGIT, find_codes, find_size_type, format_code, normalize
+from src.iso6346 import (TO_DIGIT, _near, check_digit, find_codes, find_size_type, format_code,
+                         normalize)
+from src.saudi_plate import arabic_matches, format_plate, parse_latin, to_arabic
+
+MODELS = Path(__file__).resolve().parent.parent / 'models'
 
 
 def unstack(crop):
@@ -77,21 +83,33 @@ class Recognizer:
         use_cuda needs `pip install onnxruntime-gpu` and an NVIDIA GPU."""
         self.max_side = max_side
         self.engine = RapidOCR(det_use_cuda=use_cuda, rec_use_cuda=use_cuda, cls_use_cuda=use_cuda)
+        # Arabic recognition (PP-OCRv5) for the top row of Saudi plates
+        self.arabic = RapidOCR(rec_model_path=str(MODELS / 'arabic_PP-OCRv5_rec_mobile.onnx'),
+                               rec_keys_path=str(MODELS / 'ppocrv5_arabic_dict.txt'),
+                               rec_use_cuda=use_cuda)
 
-    def __call__(self, frame, zoom=True, vertical=True):
-        """Returns {'codes': [...], 'texts': [...], 'ms': float}. Each code is a dict with
-        code, valid (check digit OK), size_type, score, box (x, y, w, h) in frame pixels.
+    def __call__(self, frame, zoom=True, vertical=True, plates=True):
+        """Returns {'codes': [...], 'plates': [...], 'texts': [...], 'ms': float}. Each code is a
+        dict with code, valid (check digit OK), size_type, score, box (x, y, w, h) in frame pixels.
+        Each plate: plate ('5188 VDA'), digits, letters, arabic, verified (Arabic row agrees),
+        score, box, latin_box.
         zoom: if no check-digit-valid code is found, re-read around the likeliest serial
         number at 2x (small, far-away codes); costs one extra OCR pass only when needed.
         vertical: if still nothing valid, look for vertically stacked codes (container side
         corners) by detecting text on the frame rotated 90 degrees; one extra pass."""
         t0 = time.perf_counter()
         out = self._read(frame)
+        main_items = out['items']
+        for c in out['codes']:
+            if c['code'].endswith('?'):
+                self._read_check_digit(frame, c, main_items)
         if zoom and not any(c['valid'] for c in out['codes']):
-            serials = [b for t, b in zip(out['texts'], out['boxes'])
-                       if sum(ch.isdigit() for ch in t) >= 5]
+            # zoom on the unverified code if there is one, else the tallest number
+            serials = [c['box'] for c in out['codes']] or sorted(
+                (b for t, b in zip(out['texts'], out['boxes']) if sum(ch.isdigit() for ch in t) >= 5),
+                key=lambda b: -b[3])
             if serials:
-                x, y, w, h = max(serials, key=lambda b: b[3])
+                x, y, w, h = serials[0]
                 x0, y0 = max(0, x - 4 * h), max(0, y - 2 * h)
                 crop = frame[y0:y + 3 * h, x0:x + w + 4 * h]
                 zoomed = self._read(cv2.resize(crop, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC))
@@ -108,9 +126,67 @@ class Recognizer:
                 v = self._codes(out['items'] + extra)
                 if any(c['valid'] for c in v['codes']) or not out['codes']:
                     out = v
+        out['plates'] = self._plates(frame, main_items) if plates else []
         out['ms'] = round((time.perf_counter() - t0) * 1000)
         del out['items']
         return out
+
+    def _read_check_digit(self, frame, code, items):
+        """The check digit is printed in a box right after the serial, and the box lines often
+        hide it from the detector. Read just that spot; accept it only if it equals the digit
+        computed from the other 10 characters (updates `code` in place)."""
+        serial = code['code'][4:10]
+        boxes = [b for t, _, b in items if _loose(t).endswith(_loose(serial))]
+        if not boxes:
+            return
+        sx, sy, sw, sh = boxes[0]
+        text, _ = self._rec(self.engine, frame[max(0, sy - sh // 5):sy + sh + sh // 5,
+                                               sx + sw:sx + sw + int(1.6 * sh)])
+        expected = str(check_digit(code['code'][:10]))
+        if expected in {TO_DIGIT.get(ch, ch) for ch in normalize(text)}:
+            code['code'], code['valid'] = code['code'][:10] + expected, True
+
+    def _rec(self, engine, crop):
+        """Recognition only (no detection) on a crop scaled to the model's 48 px height."""
+        if crop.size == 0 or crop.shape[0] < 4 or crop.shape[1] < 4:
+            return '', 0.0
+        f = 48 / crop.shape[0]
+        res, _ = engine(cv2.resize(crop, None, fx=f, fy=f, interpolation=cv2.INTER_CUBIC),
+                        use_det=False, use_cls=False)
+        return (res[0][0], float(res[0][1])) if res else ('', 0.0)
+
+    def _plates(self, frame, items):
+        """Find Saudi plates: the Latin row in the main OCR pass, or (if none) white
+        plate-shaped rectangles read row by row. Then cross-check with the Arabic row above."""
+        found = []  # (digits, letters, score, latin_box)
+        for t, s, b in items:
+            if (p := parse_latin(t)):
+                found.append((*p, s, b))
+        for (ta, sa, ba), (tb, sb, bb) in ((a, b) for a in items for b in items if a is not b):
+            # digits box and letters box side by side on one line
+            if ba[0] < bb[0] and abs(ba[1] - bb[1]) < 0.5 * ba[3] and _near(ba, bb)                     and (p := parse_latin(ta + tb)):
+                found.append((*p, min(sa, sb), _union([ba, bb])))
+        if not found:
+            for x, y, w, h in _plate_candidates(frame):
+                text, s = self._rec(self.engine, frame[y + h // 2:y + h, x:x + w])
+                if (p := parse_latin(text)):
+                    found.append((*p, s, (x, y + h // 2, w, h - h // 2)))
+        plates = {}
+        for digits, letters, score, (x, y, w, h) in found:
+            key = digits + letters
+            if key in plates and plates[key]['score'] >= score:
+                continue
+            # Arabic row sits directly above the Latin row, same width
+            top_y = max(0, y - round(1.15 * h))
+            top = frame[top_y:y, x:x + w]
+            ar_texts = [self._rec(self.arabic, c)[0] for c in (top, top[:, :w // 2], top[:, w // 2:])]
+            plates[key] = {
+                'plate': format_plate(digits, letters), 'digits': digits, 'letters': letters,
+                'arabic': to_arabic(digits, letters), 'verified': arabic_matches(ar_texts, digits, letters),
+                'arabic_read': ar_texts[0], 'score': round(score, 3), 'latin_box': (x, y, w, h),
+                'box': (x, top_y, w, y + h - top_y),
+            }
+        return sorted(plates.values(), key=lambda p: (p['verified'], p['score']), reverse=True)
 
     def _small(self, frame):
         scale = min(1.0, self.max_side / max(frame.shape[:2]))
@@ -198,12 +274,34 @@ class Recognizer:
         return {'codes': codes, 'texts': texts, 'boxes': [b for _, _, b in items], 'items': items}
 
 
-def draw(frame, codes):
-    """Draw code boxes and labels in place: green = check digit OK, orange = unverified."""
-    for c in codes:
-        x, y, w, h = c['box']
-        color = (0, 200, 0) if c['valid'] else (0, 165, 255)
-        label = format_code(c['code']) + (f"  {c['size_type']}" if c['size_type'] else '')
+def _union(boxes):
+    x0, y0 = min(b[0] for b in boxes), min(b[1] for b in boxes)
+    return x0, y0, max(b[0] + b[2] for b in boxes) - x0, max(b[1] + b[3] for b in boxes) - y0
+
+
+def _plate_candidates(frame):
+    """White, plate-shaped rectangles (Saudi plates are white with dark print). The plate's
+    divider lines are bridged by a closing so the whole plate is one blob."""
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    white = cv2.inRange(hsv, (0, 0, 140), (180, 70, 255))
+    k = max(3, frame.shape[0] // 300)
+    white = cv2.morphologyEx(white, cv2.MORPH_CLOSE, np.ones((k, k), np.uint8))
+    out = []
+    for c in cv2.findContours(white, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]:
+        x, y, w, h = cv2.boundingRect(c)
+        if 1.1 <= w / h <= 3.6 and w * h >= 400 and h < 0.15 * frame.shape[0] \
+                and cv2.contourArea(c) > 0.5 * w * h:
+            out.append((x, y, w, h))
+    return out
+
+
+def draw(frame, codes, plates=()):
+    """Draw boxes and labels in place: green = check digit OK, orange = unverified,
+    blue = plate (darker when the Arabic row confirmed it)."""
+    items = [(c['box'], (0, 200, 0) if c['valid'] else (0, 165, 255),
+              format_code(c['code']) + (f"  {c['size_type']}" if c['size_type'] else '')) for c in codes]
+    items += [(p['box'], (255, 120, 0) if p['verified'] else (255, 200, 80), p['plate']) for p in plates]
+    for (x, y, w, h), color, label in items:
         thick = max(2, frame.shape[1] // 600)
         cv2.rectangle(frame, (x, y), (x + w, y + h), color, thick)
         font = max(0.6, frame.shape[1] / 1600)

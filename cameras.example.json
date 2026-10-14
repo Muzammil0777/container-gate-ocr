@@ -6,10 +6,20 @@
   "cooldown_s": 300,
   "accept_unverified": true,
   "use_cuda": false,
+  "plates": true,
+  "language": "en",
   "cameras": [
-    {"name": "Gate 1 Entry", "direction": "IN",  "location": "Main gate, Lane 1",
-     "source": "rtsp://USER:PASSWORD@192.168.1.64:554/Streaming/Channels/101"},
-    {"name": "Gate 1 Exit",  "direction": "OUT", "location": "Main gate, Lane 2",
-     "source": "rtsp://USER:PASSWORD@192.168.1.65:554/Streaming/Channels/101"}
+    {
+      "name": "Gate 1 Entry",
+      "direction": "IN",
+      "location": "Main gate, Lane 1",
+      "source": "rtsp://USER:PASSWORD@192.168.1.64:554/Streaming/Channels/101"
+    },
+    {
+      "name": "Gate 1 Exit",
+      "direction": "OUT",
+      "location": "Main gate, Lane 2",
+      "source": "rtsp://USER:PASSWORD@192.168.1.65:554/Streaming/Channels/101"
+    }
   ]
 }
