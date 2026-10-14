@@ -17,7 +17,7 @@ import streamlit as st
 st.set_page_config(page_title='Container Code Recognition', page_icon='🚛', layout='wide')
 
 
-@st.cache_resource
+@st.cache_resource(max_entries=2)  # each model copy is ~100 MB; free hosting has ~1 GB
 def get_recognizer(max_side):
     return Recognizer(max_side=max_side)
 
@@ -127,7 +127,9 @@ with tab_vid:
 
 with tab_cam:
     st.caption('Check that a CCTV camera is reachable and its view is readable before running '
-               '`cctv.py`. Accepts RTSP/HTTP URLs or a webcam index (0).')
+               '`cctv.py`. Accepts RTSP/HTTP URLs or a webcam index (0). On the hosted demo '
+               'only cameras reachable from the internet work; for cameras on your local '
+               'network, run the app on a PC in that network.')
     source = st.text_input('Camera source', placeholder='rtsp://user:password@192.168.1.64:554/Streaming/Channels/101')
     if source and st.button('📸 Grab a frame and read it'):
         cap = cv2.VideoCapture(int(source) if source.isdigit() else source)
