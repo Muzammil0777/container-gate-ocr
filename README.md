@@ -6,6 +6,10 @@ time, direction, camera, location and a snapshot.
 
 Everything is free and runs on a normal CPU: no GPU, no cloud, no paid API.
 
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://container-gate-ocr.streamlit.app/)
+**Live demo: https://container-gate-ocr.streamlit.app/**. Upload a photo of a container
+and see the code it reads.
+
 ![Output example](./output.jpg?raw=true "Output example")
 
 ## How it works
@@ -38,6 +42,9 @@ pip install -r requirements.txt
 Python 3.9+. The OCR models (~15 MB) ship inside the `rapidocr_onnxruntime` package.
 
 ## 1. Try it: Streamlit demo
+
+Use the hosted demo at https://container-gate-ocr.streamlit.app/, or run it locally
+(faster, and it can reach cameras on your own network):
 
 ```bash
 streamlit run app.py
