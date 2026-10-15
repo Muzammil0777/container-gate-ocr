@@ -1,25 +1,29 @@
 {
-  "excel": "logs/gate_log_%Y-%m.xlsx",
-  "snapshots": "logs/snapshots",
+  "nvr": {
+    "ip": "192.168.1.64",
+    "user": "admin",
+    "password": "YOUR_NVR_PASSWORD"
+  },
+  "language": "en",
+  "plates": true,
   "fps": 2,
   "min_hits": 2,
   "cooldown_s": 300,
   "accept_unverified": true,
-  "use_cuda": false,
-  "plates": true,
-  "language": "en",
+  "excel": "logs/gate_log_%Y-%m.xlsx",
+  "snapshots": "logs/snapshots",
   "cameras": [
     {
       "name": "Gate 1 Entry",
+      "channel": 1,
       "direction": "IN",
-      "location": "Main gate, Lane 1",
-      "source": "rtsp://USER:PASSWORD@192.168.1.64:554/Streaming/Channels/101"
+      "location": "Main gate, Lane 1"
     },
     {
       "name": "Gate 1 Exit",
+      "channel": 2,
       "direction": "OUT",
-      "location": "Main gate, Lane 2",
-      "source": "rtsp://USER:PASSWORD@192.168.1.65:554/Streaming/Channels/101"
+      "location": "Main gate, Lane 2"
     }
   ]
 }

@@ -6,6 +6,7 @@ from pathlib import Path
 # Must be imported before pandas: on Windows, pandas/pyarrow loads an older MSVC runtime DLL
 # that makes onnxruntime fail with "DLL load failed while importing onnxruntime_pybind11_state".
 from src.recognizer import Recognizer, draw  # noqa: I001
+from src.camera import hikvision_url, open_capture, port_open
 from src.gate import COLUMNS, LINKS, ExcelLog, GateTracker
 from src.i18n import LANGUAGES, t
 from src.iso6346 import format_code
@@ -80,7 +81,44 @@ if L == 'ar':  # right-to-left layout for Arabic
 
 recognizer = get_recognizer(max_side)
 opts = dict(zoom=zoom, vertical=vertical, plates=read_plates)
-tab_img, tab_vid, tab_cam, tab_log = st.tabs([t(k, L) for k in ('tab_image', 'tab_video', 'tab_camera', 'tab_log')])
+tab_live, tab_img, tab_vid, tab_cam, tab_log = st.tabs(
+    [t(k, L) for k in ('tab_live', 'tab_image', 'tab_video', 'tab_camera', 'tab_log')])
+
+
+def latest_rows(n=10):
+    """Newest rows of the most recently written gate log (None if there is none yet)."""
+    logs = sorted(Path('logs').glob('*.xlsx'), key=lambda p: p.stat().st_mtime)
+    if not logs:
+        return None
+    try:
+        df = pd.read_excel(logs[-1])
+    except Exception:  # being written by cctv.py right now; next refresh will get it
+        return None
+    links = {t(k, x) for k in LINKS for x in LANGUAGES}
+    return df.drop(columns=[c for c in df.columns if c in links]).tail(n).iloc[::-1]
+
+
+with tab_live:
+    @st.fragment(run_every=2)
+    def live_view():
+        frames = sorted(Path('logs/live').glob('*.jpg'))
+        if not frames:
+            st.info(t('no_live', L))
+            return
+        cols = st.columns(min(2, len(frames)))
+        for i, p in enumerate(frames):
+            age = int(time.time() - p.stat().st_mtime)
+            with cols[i % len(cols)]:
+                st.image(p.read_bytes(), caption=f"{p.stem.replace('_', ' ')} · {t('updated', L, s=age)}",
+                         use_container_width=True)
+                if age > 30:
+                    st.warning(t('stale', L, s=age))
+        rows = latest_rows()
+        if rows is not None:
+            st.subheader(t('latest_rows', L))
+            st.dataframe(rows, hide_index=True, use_container_width=True)
+
+    live_view()
 
 with tab_img:
     files = st.file_uploader(t('upload_images', L), type=['jpg', 'jpeg', 'png', 'bmp', 'webp'],
@@ -150,18 +188,32 @@ with tab_vid:
 
 with tab_cam:
     st.caption(t('camera_caption', L))
-    source = st.text_input(t('camera_source', L),
-                           placeholder='rtsp://user:password@192.168.1.64:554/Streaming/Channels/101')
+    mode = st.radio(t('conn_mode', L), ['nvr', 'url'], horizontal=True,
+                    format_func=lambda m: t(f'{m}_mode', L))
+    if mode == 'nvr':
+        a, b, c, d = st.columns([3, 2, 2, 1])
+        ip = a.text_input(t('nvr_ip', L), placeholder='192.168.1.64')
+        user = b.text_input(t('nvr_user', L), 'admin')
+        password = c.text_input(t('nvr_password', L), type='password')
+        channel = d.number_input(t('nvr_channel', L), 1, 64, 1)
+        source = hikvision_url(ip.strip(), user, password, channel) if ip and password else ''
+    else:
+        source = st.text_input(t('camera_source', L),
+                               placeholder='rtsp://user:password@192.168.1.64:554/Streaming/Channels/101')
     if source and st.button(t('grab_frame', L)):
-        cap = cv2.VideoCapture(int(source) if source.isdigit() else source)
+        if mode == 'nvr' and not port_open(ip.strip(), 554):
+            st.error(t('unreachable', L, ip=ip))
+            st.stop()
+        cap = open_capture(int(source) if source.isdigit() else source)
         frame = None
         for _ in range(5):  # skip stale buffered frames
             ok, f = cap.read()
             frame = f if ok else frame
         cap.release()
         if frame is None:
-            st.error(t('camera_error', L))
+            st.error(t('no_video' if mode == 'nvr' else 'camera_error', L))
         else:
+            st.success(t('camera_ok', L, w=frame.shape[1], h=frame.shape[0]))
             show_result(frame, recognizer(frame, **opts), L)
 
 with tab_log:

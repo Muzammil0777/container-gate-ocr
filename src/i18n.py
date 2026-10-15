@@ -44,6 +44,7 @@ TEXT = {
     'read_plates': ('Read Saudi number plates', 'قراءة اللوحات السعودية'),
     'legend': ('**Legend**  \n🟩 check digit valid  \n🟧 unverified  \n🟦 number plate',
                '**دليل الألوان**  \n🟩 رقم التحقق صحيح  \n🟧 غير مؤكد  \n🟦 لوحة السيارة'),
+    'tab_live': ('🔴 Live', '🔴 مباشر'),
     'tab_image': ('📷 Image', '📷 صورة'),
     'tab_video': ('🎞️ Video → gate log', '🎞️ فيديو ← سجل البوابة'),
     'tab_camera': ('📡 Camera test', '📡 اختبار الكاميرا'),
@@ -83,6 +84,29 @@ TEXT = {
                        'RTSP/HTTP أو رقم كاميرا الويب (0). في النسخة المستضافة تعمل فقط الكاميرات المتاحة '
                        'عبر الإنترنت؛ لكاميرات الشبكة المحلية شغّل التطبيق على جهاز في نفس الشبكة.'),
     'camera_source': ('Camera source', 'مصدر الكاميرا'),
+    'conn_mode': ('Connect with', 'طريقة الاتصال'),
+    'nvr_mode': ('Hikvision NVR / camera', 'جهاز تسجيل / كاميرا Hikvision'),
+    'url_mode': ('Stream URL', 'رابط البث'),
+    'nvr_ip': ('NVR IP address', 'عنوان IP للجهاز'),
+    'nvr_user': ('Username', 'اسم المستخدم'),
+    'nvr_password': ('Password', 'كلمة المرور'),
+    'nvr_channel': ('Channel', 'القناة'),
+    'unreachable': ('Cannot reach {ip}. Check the IP address and that this computer is on the same network '
+                    'as the NVR (same switch or Wi-Fi).',
+                    'تعذّر الوصول إلى {ip}. تحقق من عنوان IP ومن أن هذا الجهاز على نفس شبكة جهاز التسجيل.'),
+    'no_video': ('The NVR is reachable but sent no video. Check the username/password, the channel number, '
+                 'and that RTSP is enabled on the NVR.',
+                 'جهاز التسجيل متاح لكنه لم يرسل فيديو. تحقق من اسم المستخدم وكلمة المرور ورقم القناة '
+                 'وتفعيل RTSP في الجهاز.'),
+    'camera_ok': ('Connected: {w}x{h}', 'تم الاتصال: {w}x{h}'),
+    'no_live': ('No live camera running. Start the gate logger with `python cctv.py --config cameras.json` '
+                '(or double-click start_gate.bat); its cameras appear here, refreshed every 2 s.',
+                'لا توجد كاميرا مباشرة. شغّل مسجل البوابة `python cctv.py --config cameras.json` '
+                '(أو انقر مرتين على start_gate.bat)؛ ستظهر الكاميرات هنا وتتحدث كل ثانيتين.'),
+    'updated': ('updated {s} s ago', 'آخر تحديث قبل {s} ثانية'),
+    'stale': ('No new frame for {s} s: is cctv.py still running and the camera connected?',
+              'لا يوجد إطار جديد منذ {s} ثانية: هل ما زال cctv.py يعمل والكاميرا متصلة؟'),
+    'latest_rows': ('Latest trucks', 'أحدث الشاحنات'),
     'grab_frame': ('📸 Grab a frame and read it', '📸 التقاط إطار وقراءته'),
     'camera_error': ('Could not read from this source. Check the URL, credentials and network.',
                      'تعذّرت القراءة من هذا المصدر. تحقق من الرابط وبيانات الدخول والشبكة.'),

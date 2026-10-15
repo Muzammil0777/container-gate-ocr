@@ -79,6 +79,27 @@ Single image from the command line: `python single_frame_process.py -i images/ks
 
 ## 2. Run it on CCTV cameras
 
+### On site with a Hikvision NVR
+
+1. Connect the laptop to the NVR's network (same switch or Wi-Fi). Get the NVR's IP
+   address and a username/password from the site; the IP is also on the NVR's monitor
+   under *Menu → Configuration → Network*.
+2. **Find the cameras:** double-click `find_cameras.bat`, or run `py -3.12 cctv.py --scan`.
+   It asks for the IP, username and password (hidden), checks the connection, and saves a
+   snapshot of every working channel to `logs\scan\`. Note the channel that sees the back
+   of the trucks.
+3. `copy cameras.example.json cameras.json` and fill in the `nvr` block, plus one
+   `channel` per gate camera with its `direction` and `location`. Passwords with special
+   characters are handled automatically.
+4. **Start:** double-click `start_gate.bat`. It starts the logger and the app; open the
+   **🔴 Live** tab at http://localhost:8502 to watch the detections in real time.
+
+If the scan can't connect, it tells you whether the problem is the network (wrong IP,
+laptop on another network) or the login (wrong password, account locked, RTSP disabled).
+Streams use RTSP over TCP with automatic reconnect.
+
+### Commands
+
 ```bash
 copy cameras.example.json cameras.json      # then edit it
 python cctv.py --config cameras.json
@@ -91,7 +112,7 @@ Common RTSP URLs:
 
 | Brand | URL |
 |---|---|
-| Hikvision | `rtsp://USER:PASS@IP:554/Streaming/Channels/101` |
+| Hikvision | `"nvr"` block + `"channel"` (or `rtsp://USER:PASS@IP:554/Streaming/Channels/101`) |
 | Dahua / Amcrest | `rtsp://USER:PASS@IP:554/cam/realmonitor?channel=1&subtype=0` |
 | Webcam / test | `0`, or a video file path |
 
