@@ -105,3 +105,35 @@ def test_excel_locked_rows_are_queued_not_lost(tmp_path, monkeypatch):
     monkeypatch.setattr(wbmod.Workbook, 'save', real_save)
     log.log(event(code('TCNU6345807')))
     assert log.pending == [] and len(list(load_workbook(tmp_path / 'gate.xlsx').active.values)) == 3
+
+
+def test_excel_dedupe_and_merge(tmp_path):
+    from datetime import datetime, timedelta
+    path, t0 = str(tmp_path / 'gate.xlsx'), datetime(2026, 10, 15, 9, 0, 0)
+    log = ExcelLog(path, tmp_path / 's', dedupe_s=300)
+    first = log.log(event(code('MRSU4425761')), direction='IN', when=t0)                       # container only
+    merged = log.log(event(code('MRSU4425761'), plate()), direction='IN', when=t0 + timedelta(seconds=40))
+    dup = log.log(event(None, plate()), direction='IN', when=t0 + timedelta(seconds=90))        # same truck again
+    out = log.log(event(code('MRSU4425761'), plate()), direction='OUT', when=t0 + timedelta(seconds=120))
+    later = log.log(event(code('MRSU4425761'), plate()), direction='IN', when=t0 + timedelta(minutes=30))
+    # restart: a new ExcelLog still sees the workbook's recent rows
+    again = ExcelLog(path, tmp_path / 's').log(event(code('MRSU4425761')), direction='IN',
+                                               when=t0 + timedelta(minutes=31))
+    assert [r['status'] for r in (first, merged, dup, out, later, again)] == \
+        ['added', 'merged', 'duplicate', 'added', 'added', 'duplicate']
+    rows = list(load_workbook(path).active.values)[1:]
+    assert [(r[2], r[3], r[6]) for r in rows] == [('IN', '3231 UTA', 'MRSU 442576 1'), ('OUT', '3231 UTA', 'MRSU 442576 1'),
+                                                  ('IN', '3231 UTA', 'MRSU 442576 1')]
+    assert rows[0][13] == 'open image'                                  # plate image link filled in by the merge
+    snaps = [p.name for p in (tmp_path / 's').rglob('*.jpg')]
+    assert len(snaps) == 3 + 1 + 2                                      # 3 row snapshots + merged plate + 2 plate images
+
+
+def test_unverified_container_upgraded_by_valid_read(tmp_path):
+    from datetime import datetime, timedelta
+    path, t0 = str(tmp_path / 'gate.xlsx'), datetime(2026, 10, 15, 9, 0, 0)
+    log = ExcelLog(path, tmp_path / 's')
+    log.log(event(code('MRSU442576?', valid=False), plate()), direction='IN', when=t0)
+    r = log.log(event(code('MRSU4425761')), direction='IN', when=t0 + timedelta(seconds=30))
+    rows = list(load_workbook(path).active.values)[1:]
+    assert r['status'] == 'merged' and [(x[6], x[7]) for x in rows] == [('MRSU 442576 1', 'YES')]

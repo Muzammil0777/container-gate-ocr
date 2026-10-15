@@ -1,4 +1,5 @@
 """Streamlit demo for testing the recognizer:  streamlit run app.py"""
+import json
 import tempfile
 import time
 from pathlib import Path
@@ -7,6 +8,7 @@ from pathlib import Path
 # that makes onnxruntime fail with "DLL load failed while importing onnxruntime_pybind11_state".
 from src.recognizer import Recognizer, draw  # noqa: I001
 from src.camera import hikvision_url, open_capture, port_open
+from cctv import LiveManager, _safe
 from src.gate import COLUMNS, LINKS, ExcelLog, GateTracker
 from src.i18n import LANGUAGES, t
 from src.iso6346 import format_code
@@ -98,12 +100,98 @@ def latest_rows(n=10):
     return df.drop(columns=[c for c in df.columns if c in links]).tail(n).iloc[::-1]
 
 
+CONFIG = Path('cameras.json')
+
+
+def load_config():
+    try:
+        return json.loads(CONFIG.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_config(nvr, cam, language):
+    """Remember the NVR and this camera in cameras.json (also used by cctv.py) and start it
+    automatically next time the app opens."""
+    cfg = load_config()
+    cfg.update(nvr=nvr, language=language, autostart=True)
+    cfg['cameras'] = [c for c in cfg.get('cameras', []) if c.get('name') != cam['name']] + [cam]
+    CONFIG.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+
+@st.cache_resource
+def live_manager():
+    """One camera runner for the whole app process: it survives page reloads and keeps
+    detecting with the browser closed. Saved cameras start automatically."""
+    cfg = load_config()
+    manager = LiveManager(cfg)
+    if cfg.get('autostart'):
+        for cam in cfg.get('cameras', []):
+            try:
+                manager.start(cam)
+            except Exception as e:  # one bad camera entry shouldn't stop the others
+                print(f"[app] could not start {cam.get('name')}: {e}")
+    return manager
+
+
 with tab_live:
+    manager = live_manager()
+    saved = load_config()
+    nvr, cams = saved.get('nvr', {}), saved.get('cameras') or [{}]
+    running = manager.running()
+    with st.expander(t('add_camera', L), expanded=not running):
+        with st.form('start_camera'):
+            a, b, c, d = st.columns([3, 2, 2, 1.4])
+            ip = a.text_input(t('nvr_ip', L), nvr.get('ip', ''), placeholder='192.168.1.64')
+            user = b.text_input(t('nvr_user', L), nvr.get('user', 'admin'))
+            password = c.text_input(t('nvr_password', L), nvr.get('password', ''), type='password')
+            channel = d.number_input(t('nvr_channel', L), 1, 64, int(cams[0].get('channel', 1)))
+            e, f, g = st.columns([2, 1.4, 3])
+            name = e.text_input(t('camera_name', L), cams[0].get('name', 'Gate 1'))
+            direction = f.selectbox(t('direction', L), ['IN', 'OUT'], format_func=lambda x: t(x, L),
+                                    index=['IN', 'OUT'].index(cams[0].get('direction', 'IN')))
+            location = g.text_input(t('location', L), cams[0].get('location', ''))
+            h, k = st.columns(2)
+            langs = list(LANGUAGES)
+            excel_lang = h.selectbox(t('excel_language', L), langs, format_func=LANGUAGES.get,
+                                     index=langs.index(saved.get('language', L)))
+            remember = k.checkbox(t('remember', L), True, help=t('remember_help', L))
+            go = st.form_submit_button(t('start_camera', L), type='primary')
+    if go:
+        nvr = {'ip': ip.strip(), 'user': user.strip(), 'password': password, 'port': nvr.get('port', 554)}
+        cam = {'name': name.strip() or 'Gate 1', 'channel': int(channel), 'direction': direction,
+               'location': location.strip()}
+        if not nvr['ip'] or not password:
+            st.error(t('no_video', L))
+        elif not port_open(nvr['ip'], nvr['port']):
+            st.error(t('unreachable', L, ip=nvr['ip']))
+        else:
+            manager.start(cam, nvr, excel_lang)
+            if remember:
+                save_config(nvr, cam, excel_lang)
+            st.success(t('started', L, name=cam['name']))
+            running = manager.running()
+    if running:
+        st.caption(t('live_hint', L))
+        for cam_name, cam in running.items():
+            a, b = st.columns([6, 1])
+            where = [t(cam.get('direction', 'IN'), L), cam.get('location', '')]
+            if 'channel' in cam:
+                where.append(f"{t('nvr_channel', L)} {cam['channel']}")
+            a.markdown(f"🟢 **{cam_name}** · " + ' · '.join(x for x in where if x))
+            if b.button(t('stop', L), key=f'stop_{cam_name}'):
+                manager.stop(cam_name)
+                st.rerun()
+
     @st.fragment(run_every=2)
     def live_view():
         frames = sorted(Path('logs/live').glob('*.jpg'))
+        waiting = [n for n in manager.running() if not (Path('logs/live') / f"{_safe(n)}.jpg").exists()]
+        for n in waiting:
+            st.info(t('connecting', L, name=n))
         if not frames:
-            st.info(t('no_live', L))
+            if not waiting:
+                st.info(t('no_live', L))
             return
         cols = st.columns(min(2, len(frames)))
         for i, p in enumerate(frames):

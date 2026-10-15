@@ -88,17 +88,32 @@ Single image from the command line: `python single_frame_process.py -i images/ks
    It asks for the IP, username and password (hidden), checks the connection, and saves a
    snapshot of every working channel to `logs\scan\`. Note the channel that sees the back
    of the trucks.
-3. `copy cameras.example.json cameras.json` and fill in the `nvr` block, plus one
-   `channel` per gate camera with its `direction` and `location`. Passwords with special
-   characters are handled automatically.
-4. **Start:** double-click `start_gate.bat`. It starts the logger and the app; open the
-   **🔴 Live** tab at http://localhost:8502 to watch the detections in real time.
+3. **Start the app:** double-click `start_gate.bat` (or `py -3.12 -m streamlit run app.py
+   --server.port 8502`) and open the **🔴 Live** tab at http://localhost:8502.
+4. **Start a camera:** in *➕ Start a camera*, enter the NVR IP, username, password and the
+   channel, plus a camera name, direction (IN/OUT) and location, then press
+   **▶ Start live detection**. Repeat this for each gate camera.
+   - The Live tab shows each camera with its detections, refreshed every 2 s, plus the
+     latest trucks logged.
+   - Every truck becomes one Excel row (plate and container) as it passes.
+   - Detection keeps running with the browser closed, as long as the app's PowerShell
+     window stays open.
+   - With *Remember and start automatically* ticked, the settings are saved to
+     `cameras.json` on this computer, and the cameras start again whenever the app is opened.
 
-If the scan can't connect, it tells you whether the problem is the network (wrong IP,
-laptop on another network) or the login (wrong password, account locked, RTSP disabled).
-Streams use RTSP over TCP with automatic reconnect.
+If the scan or the Start button can't connect, it tells you whether the problem is the
+network (wrong IP, laptop on another network) or the login (wrong password, account
+locked, RTSP disabled). Streams use RTSP over TCP with automatic reconnect.
 
-### Commands
+**Duplicates:** the Excel log is checked before every write. The same container or plate in
+the same direction within `cooldown_s` (5 minutes) is never added twice, even across
+restarts or two cameras. If the repeat reading adds something the first row was missing (a
+plate, or a confirmed check digit), the earlier row is filled in instead.
+
+### Running without the app (headless)
+
+`cctv.py` does the same logging without the app, e.g. as a Windows startup task. Don't run
+both for the same camera: duplicates are still prevented, but the CPU does the work twice.
 
 ```bash
 copy cameras.example.json cameras.json      # then edit it

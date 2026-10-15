@@ -138,8 +138,52 @@ def _write_live(path, img, caption):
 def _log(events, log, camera, location, direction):
     for e in events:
         row = log.log(e, camera, location, direction)
+        note = {'merged': '  (added to the earlier row)', 'duplicate': '  (duplicate, not added)'}.get(row['status'], '')
         print(f"[cctv] {row['date']} {row['time']}  {row['direction']:<4} plate {row['plate'] or '-':<9} "
-              f"container {row['container'] or '-':<14}  {camera} / {location}")
+              f"container {row['container'] or '-':<14}  {camera} / {location}{note}")
+
+
+class LiveManager:
+    """Runs cameras in background threads inside another program (the Streamlit app's Live
+    tab): start/stop single cameras while the program keeps running."""
+
+    def __init__(self, cfg=None):
+        self.cfg = {**DEFAULTS, **(cfg or {})}
+        self.cams = {}  # name -> (thread, stop event, camera entry)
+        self.ocr_lock, self.recognizer, self.logs = threading.Lock(), None, {}
+        threading.Thread(target=self._flusher, daemon=True).start()
+
+    def start(self, cam, nvr=None, language=None):
+        """Start (or restart) one camera. Raises ValueError if its connection details are incomplete."""
+        cfg = {**self.cfg, 'nvr': nvr or self.cfg.get('nvr'), 'language': language or self.cfg['language']}
+        camera_source(cam, cfg['nvr'])
+        self.stop(cam['name'])
+        if self.recognizer is None:
+            self.recognizer = Recognizer(cfg['max_side'], cfg['use_cuda'])
+        key = (cfg['excel'], cfg['language'])
+        if key not in self.logs:  # one writer per workbook, shared by all cameras
+            self.logs[key] = ExcelLog(cfg['excel'], cfg['snapshots'], cfg['language'], cfg['cooldown_s'])
+        stop = threading.Event()
+        th = threading.Thread(target=watch, daemon=True,
+                              args=(cam, cfg, self.recognizer, self.ocr_lock, self.logs[key], None, stop))
+        th.start()
+        self.cams[cam['name']] = (th, stop, cam)
+
+    def stop(self, name):
+        th, stop, _ = self.cams.pop(name, (None, None, None))
+        if stop:
+            stop.set()
+            th.join(timeout=10)
+        (Path(self.cfg['live_dir']) / f"{_safe(name)}.jpg").unlink(missing_ok=True)
+
+    def running(self):
+        return {name: cam for name, (th, _, cam) in self.cams.items() if th.is_alive()}
+
+    def _flusher(self):
+        while True:  # write rows that were queued while a workbook was open in Excel
+            time.sleep(5)
+            for log in list(self.logs.values()):
+                log.flush()
 
 
 def _safe(name):
@@ -234,7 +278,7 @@ def main():
             args.show = False
 
     recognizer, ocr_lock = Recognizer(cfg['max_side'], cfg['use_cuda']), threading.Lock()
-    log = ExcelLog(cfg['excel'], cfg['snapshots'], cfg['language'])
+    log = ExcelLog(cfg['excel'], cfg['snapshots'], cfg['language'], cfg['cooldown_s'])
     previews, stop = ({} if args.show else None), threading.Event()
     threads = [threading.Thread(target=watch, args=(cam, cfg, recognizer, ocr_lock, log, previews, stop),
                                 daemon=True) for cam in cfg['cameras']]

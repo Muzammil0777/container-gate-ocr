@@ -118,10 +118,17 @@ class ExcelLog:
     values (Arabic sheets are right-to-left). Thread-safe. If the workbook is open in Excel
     (locked on Windows), rows are queued and written on the next append/flush. A workbook
     with different columns (older version, other language) is left alone and a new one
-    with a _2, _3... suffix is used."""
+    with a _2, _3... suffix is used.
 
-    def __init__(self, path='logs/gate_log_%Y-%m.xlsx', snapshot_dir='logs/snapshots', language='en'):
-        self.path, self.snapshot_dir, self.lang = path, Path(snapshot_dir), language
+    Duplicates are checked against the workbook itself, so they are caught across restarts,
+    cameras and processes: a row for the same direction and the same container (serial) or
+    plate within `dedupe_s` seconds is not added again. If the new reading has something the
+    earlier row lacks (a plate, a container, a confirmed check digit), that row is filled in
+    instead. row['status'] says what happened: 'added', 'merged', 'duplicate' or 'queued'."""
+
+    def __init__(self, path='logs/gate_log_%Y-%m.xlsx', snapshot_dir='logs/snapshots', language='en',
+                 dedupe_s=300):
+        self.path, self.snapshot_dir, self.lang, self.dedupe_s = path, Path(snapshot_dir), language, dedupe_s
         self.pending = []
         self.lock = threading.Lock()
 
@@ -157,7 +164,7 @@ class ExcelLog:
             'size_type': (code['size_type'] or '') if code else '',
             'camera': camera, 'location': location,
             'confidence': round(min(x['score'] for x in (code, plate) if x), 3),
-            'snapshot': str(snap.resolve()), 'plate_image': plate_img,
+            'snapshot': str(snap.resolve()), 'plate_image': plate_img, 'status': 'queued',
         }
         with self.lock:
             self.pending.append((when, row))
@@ -195,17 +202,75 @@ class ExcelLog:
             try:
                 path, wb = self._workbook(Path(when.strftime(self.path)))
                 ws = wb.active
-                ws.append([row[c] for c in COLUMNS])
-                for key in LINKS:
-                    if row[key]:
-                        cell = ws.cell(row=ws.max_row, column=COLUMNS.index(key) + 1)
-                        cell.hyperlink, cell.value, cell.style = row[key], t('open_image', self.lang), 'Hyperlink'
-                wb.save(path)
+                r = self._match(ws, row, when)
+                if r is None:
+                    ws.append([row[c] for c in COLUMNS])
+                    for key in LINKS:
+                        self._set(ws, ws.max_row, key, row[key])
+                    status = 'added'
+                else:
+                    status = 'merged' if self._merge(ws, r, row) else 'duplicate'
+                if status != 'duplicate':
+                    wb.save(path)
             except PermissionError:
                 print(f"[gate] {when.strftime(self.path)} is open in another program, {len(self.pending)} "
                       f"row(s) queued; close it and they will be written on the next event.")
                 return
+            row['status'] = status
+            if status != 'added':  # the earlier row keeps its snapshot; drop the unused new files
+                for key in LINKS:
+                    if row[key] and not (status == 'merged' and key == 'plate_image' and row.get('_plate_used')):
+                        Path(row[key]).unlink(missing_ok=True)
             self.pending.pop(0)
+
+    def _set(self, ws, r, key, value):
+        cell = ws.cell(row=r, column=COLUMNS.index(key) + 1)
+        if key in LINKS:
+            if value:
+                cell.hyperlink, cell.value, cell.style = value, t('open_image', self.lang), 'Hyperlink'
+        else:
+            cell.value = value
+
+    def _match(self, ws, row, when):
+        """Row number of a recent row for the same truck, or None."""
+        if not self.dedupe_s:
+            return None
+        i = {c: n for n, c in enumerate(COLUMNS)}
+        serial = _serial(row['container'])
+        for r in range(ws.max_row, max(1, ws.max_row - 300), -1):  # newest first
+            v = [c.value for c in ws[r]]
+            try:
+                logged = datetime.strptime(f"{v[i['date']]} {v[i['time']]}", '%Y-%m-%d %H:%M:%S')
+            except (TypeError, ValueError):
+                continue
+            if (when - logged).total_seconds() > self.dedupe_s:
+                break  # rows are in time order: everything above is older
+            if (v[i['direction']] or '') != row['direction']:
+                continue
+            if (serial and serial == _serial(v[i['container']])) or (row['plate'] and row['plate'] == v[i['plate']]):
+                return r
+        return None
+
+    def _merge(self, ws, r, row):
+        """Fill in what the earlier row of the same truck is missing. True if it changed."""
+        get = lambda k: ws.cell(row=r, column=COLUMNS.index(k) + 1).value  # noqa: E731
+        changed = False
+        if row['plate'] and not get('plate'):
+            for k in ('plate', 'plate_ar', 'plate_check', 'plate_image'):
+                self._set(ws, r, k, row[k])
+            row['_plate_used'] = changed = True
+        if row['container'] and (not get('container') or (
+                get('check_digit') == t('no', self.lang) and row['check_digit'] == t('yes', self.lang))):
+            for k in ('container', 'check_digit', 'size_type'):
+                self._set(ws, r, k, row[k])
+            changed = True
+        return changed
+
+
+def _serial(container):
+    """'MRSU 442576 1' -> 'MRSU442576' (owner + serial; the check digit may differ between reads)."""
+    c = ''.join((container or '').split())
+    return c[:10] if len(c) >= 10 else ''
 
 
 def _safe(name):

@@ -99,14 +99,33 @@ TEXT = {
                  'جهاز التسجيل متاح لكنه لم يرسل فيديو. تحقق من اسم المستخدم وكلمة المرور ورقم القناة '
                  'وتفعيل RTSP في الجهاز.'),
     'camera_ok': ('Connected: {w}x{h}', 'تم الاتصال: {w}x{h}'),
-    'no_live': ('No live camera running. Start the gate logger with `python cctv.py --config cameras.json` '
-                '(or double-click start_gate.bat); its cameras appear here, refreshed every 2 s.',
-                'لا توجد كاميرا مباشرة. شغّل مسجل البوابة `python cctv.py --config cameras.json` '
-                '(أو انقر مرتين على start_gate.bat)؛ ستظهر الكاميرات هنا وتتحدث كل ثانيتين.'),
+    'no_live': ('No camera running. Fill in the NVR details above and press Start; the camera appears '
+                'here, refreshed every 2 s.',
+                'لا توجد كاميرا تعمل. أدخل بيانات جهاز التسجيل أعلاه واضغط «بدء»؛ ستظهر الكاميرا هنا '
+                'وتتحدث كل ثانيتين.'),
     'updated': ('updated {s} s ago', 'آخر تحديث قبل {s} ثانية'),
     'stale': ('No new frame for {s} s: is cctv.py still running and the camera connected?',
               'لا يوجد إطار جديد منذ {s} ثانية: هل ما زال cctv.py يعمل والكاميرا متصلة؟'),
     'latest_rows': ('Latest trucks', 'أحدث الشاحنات'),
+    'add_camera': ('➕ Start a camera', '➕ تشغيل كاميرا'),
+    'camera_name': ('Camera name', 'اسم الكاميرا'),
+    'excel_language': ('Excel language', 'لغة ملف Excel'),
+    'remember': ('Remember and start automatically', 'تذكّر وتشغيل تلقائي'),
+    'remember_help': ('Saves these settings (including the password) to cameras.json on this computer, '
+                      'and starts this camera again whenever the app opens.',
+                      'يحفظ هذه الإعدادات (ومنها كلمة المرور) في cameras.json على هذا الجهاز، ويشغّل '
+                      'الكاميرا تلقائياً عند فتح التطبيق.'),
+    'start_camera': ('▶ Start live detection', '▶ بدء الكشف المباشر'),
+    'started': ('Started {name}. Trucks are logged to Excel as they pass.',
+                'تم تشغيل {name}. يتم تسجيل الشاحنات في Excel عند مرورها.'),
+    'stop': ('⏹ Stop', '⏹ إيقاف'),
+    'connecting': ('{name}: connecting to the camera…', '{name}: جارٍ الاتصال بالكاميرا…'),
+    'running_cameras': ('Running cameras', 'الكاميرات العاملة'),
+    'live_hint': ('Detection keeps running while this app is open in the PowerShell window, even if you '
+                  'close the browser tab. Each truck is written once; repeats within 5 minutes are '
+                  'merged into its row.',
+                  'يستمر الكشف ما دام التطبيق يعمل في نافذة PowerShell حتى لو أغلقت المتصفح. تُسجَّل كل '
+                  'شاحنة مرة واحدة؛ والقراءات المكررة خلال 5 دقائق تُدمج في صفها.'),
     'grab_frame': ('📸 Grab a frame and read it', '📸 التقاط إطار وقراءته'),
     'camera_error': ('Could not read from this source. Check the URL, credentials and network.',
                      'تعذّرت القراءة من هذا المصدر. تحقق من الرابط وبيانات الدخول والشبكة.'),
