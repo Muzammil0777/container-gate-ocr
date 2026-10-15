@@ -1,5 +1,6 @@
 """Turn per-frame reads into one gate event per truck (plate + container) and log it to
 Excel with snapshots."""
+import io
 import threading
 import time
 from collections import defaultdict
@@ -186,15 +187,7 @@ class ExcelLog:
             n += 1
             path = base.with_name(f"{base.stem}_{n}{base.suffix}")
         path.parent.mkdir(parents=True, exist_ok=True)
-        wb = Workbook()
-        ws = wb.active
-        ws.title = t('sheet', self.lang)
-        ws.sheet_view.rightToLeft = self.lang == 'ar'
-        ws.append(headers)
-        for cell in ws[1]:
-            cell.font = Font(bold=True)
-        ws.freeze_panes = 'A2'
-        return path, wb
+        return path, _new_workbook(self.lang)
 
     def _flush(self):
         while self.pending:
@@ -224,12 +217,7 @@ class ExcelLog:
             self.pending.pop(0)
 
     def _set(self, ws, r, key, value):
-        cell = ws.cell(row=r, column=COLUMNS.index(key) + 1)
-        if key in LINKS:
-            if value:
-                cell.hyperlink, cell.value, cell.style = value, t('open_image', self.lang), 'Hyperlink'
-        else:
-            cell.value = value
+        _set_cell(ws, r, key, value, self.lang)
 
     def _match(self, ws, row, when):
         """Row number of a recent row for the same truck, or None."""
@@ -265,6 +253,60 @@ class ExcelLog:
                 self._set(ws, r, k, row[k])
             changed = True
         return changed
+
+
+def _new_workbook(lang):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = t('sheet', lang)
+    ws.sheet_view.rightToLeft = lang == 'ar'
+    ws.append([t(c, lang) for c in COLUMNS])
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+    ws.freeze_panes = 'A2'
+    return wb
+
+
+def _set_cell(ws, r, key, value, lang):
+    cell = ws.cell(row=r, column=COLUMNS.index(key) + 1)
+    if key in LINKS:
+        if value:
+            cell.hyperlink, cell.value, cell.style = value, t('open_image', lang), 'Hyperlink'
+    else:
+        cell.value = value
+
+
+def read_day(log_dir, day):
+    """All rows logged on `day` ('YYYY-MM-DD') in the gate workbooks in log_dir, oldest
+    first, as {column key: value} (link columns hold the image file path). Workbooks in
+    either language are read; ones with other columns (older versions) are skipped."""
+    headers = [[t(c, lang) for c in COLUMNS] for lang in ('en', 'ar')]
+    rows = []
+    for path in sorted(Path(log_dir).glob('*.xlsx')):
+        try:
+            ws = load_workbook(path).active
+        except Exception:  # being written right now, or not a gate log
+            continue
+        if [c.value for c in ws[1]] not in headers:
+            continue
+        for cells in ws.iter_rows(min_row=2, max_col=len(COLUMNS)):
+            if str(cells[0].value) == day:
+                rows.append({k: (c.hyperlink.target if c.hyperlink else '') if k in LINKS else c.value
+                             for k, c in zip(COLUMNS, cells)})
+    return sorted(rows, key=lambda r: str(r['time']))
+
+
+def export_day(rows, lang='en'):
+    """One day's rows (from read_day) as .xlsx file bytes, same layout as the gate log."""
+    wb = _new_workbook(lang)
+    ws = wb.active
+    for row in rows:
+        ws.append([None if k in LINKS else row[k] for k in COLUMNS])
+        for key in LINKS:
+            _set_cell(ws, ws.max_row, key, row[key], lang)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
 
 
 def _serial(container):

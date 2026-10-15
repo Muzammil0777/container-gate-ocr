@@ -2,6 +2,7 @@
 import json
 import tempfile
 import time
+from datetime import date
 from pathlib import Path
 
 # Must be imported before pandas: on Windows, pandas/pyarrow loads an older MSVC runtime DLL
@@ -9,7 +10,7 @@ from pathlib import Path
 from src.recognizer import Recognizer, draw  # noqa: I001
 from src.camera import hikvision_url, open_capture, port_open
 from cctv import LiveManager, _safe
-from src.gate import COLUMNS, LINKS, ExcelLog, GateTracker
+from src.gate import COLUMNS, LINKS, ExcelLog, GateTracker, export_day, read_day
 from src.i18n import LANGUAGES, t
 from src.iso6346 import format_code
 
@@ -87,17 +88,32 @@ tab_live, tab_img, tab_vid, tab_cam, tab_log = st.tabs(
     [t(k, L) for k in ('tab_live', 'tab_image', 'tab_video', 'tab_camera', 'tab_log')])
 
 
-def latest_rows(n=10):
-    """Newest rows of the most recently written gate log (None if there is none yet)."""
-    logs = sorted(Path('logs').glob('*.xlsx'), key=lambda p: p.stat().st_mtime)
-    if not logs:
-        return None
-    try:
-        df = pd.read_excel(logs[-1])
-    except Exception:  # being written by cctv.py right now; next refresh will get it
-        return None
-    links = {t(k, x) for k in LINKS for x in LANGUAGES}
-    return df.drop(columns=[c for c in df.columns if c in links]).tail(n).iloc[::-1]
+@st.cache_data(max_entries=16)
+def _day_rows(day, stamp):  # stamp = workbook names + modification times, so edits refresh it
+    return read_day('logs', day)
+
+
+def day_rows(day):
+    """Rows logged on `day` ('YYYY-MM-DD'); re-read only when a workbook has changed."""
+    stamp = tuple((p.name, p.stat().st_mtime) for p in sorted(Path('logs').glob('*.xlsx')))
+    return _day_rows(day, stamp)
+
+
+def show_day(rows, day, L, key):
+    """Counts, table (newest first) and an Excel download for one day's trucks."""
+    if not rows:
+        st.info(t('no_rows_day', L, day=day))
+        return
+    dirs = [r['direction'] for r in rows]
+    a, b, c = st.columns(3)
+    a.metric(t('events', L), len(rows))
+    b.metric(t('IN', L), sum(d in (t('IN', x) for x in LANGUAGES) for d in dirs))
+    c.metric(t('OUT', L), sum(d in (t('OUT', x) for x in LANGUAGES) for d in dirs))
+    df = pd.DataFrame(rows[::-1])[[k for k in COLUMNS if k not in LINKS]]
+    st.dataframe(df.rename(columns=lambda k: t(k, L)), hide_index=True, use_container_width=True)
+    st.download_button(t('download_day', L, day=day), export_day(rows, L), f'gate_log_{day}.xlsx',
+                       mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                       type='primary', key=f'dl_{key}_{day}')
 
 
 CONFIG = Path('cameras.json')
@@ -189,11 +205,9 @@ with tab_live:
         waiting = [n for n in manager.running() if not (Path('logs/live') / f"{_safe(n)}.jpg").exists()]
         for n in waiting:
             st.info(t('connecting', L, name=n))
-        if not frames:
-            if not waiting:
-                st.info(t('no_live', L))
-            return
-        cols = st.columns(min(2, len(frames)))
+        if not frames and not waiting:
+            st.info(t('no_live', L))
+        cols = st.columns(min(2, len(frames))) if frames else []
         for i, p in enumerate(frames):
             age = int(time.time() - p.stat().st_mtime)
             with cols[i % len(cols)]:
@@ -201,10 +215,10 @@ with tab_live:
                          use_container_width=True)
                 if age > 30:
                     st.warning(t('stale', L, s=age))
-        rows = latest_rows()
-        if rows is not None:
-            st.subheader(t('latest_rows', L))
-            st.dataframe(rows, hide_index=True, use_container_width=True)
+        today = date.today().isoformat()
+        rows = day_rows(today)
+        st.subheader(t('today_trucks', L, n=len(rows)))
+        show_day(rows, today, L, 'live')
 
     live_view()
 
@@ -305,24 +319,20 @@ with tab_cam:
             show_result(frame, recognizer(frame, **opts), L)
 
 with tab_log:
+    # Always show the day picker: the app is usually opened before the first truck arrives,
+    # and picking a day (or reopening the tab) re-reads the workbooks.
+    day = st.date_input(t('pick_day', L), value=date.today(), format='YYYY-MM-DD').isoformat()
+    show_day(day_rows(day), day, L, 'log')
+    snaps = sorted((p for p in (Path('logs/snapshots') / day).glob('*.jpg') if not p.stem.endswith('_plate')),
+                   key=lambda p: p.stat().st_mtime, reverse=True)[:8]
+    if snaps:
+        st.subheader(t('latest_snapshots', L))
+        cols = st.columns(4)
+        for i, p in enumerate(snaps):
+            cols[i % 4].image(str(p), caption=p.stem.replace('_', ' '))
     logs = sorted(Path('logs').glob('*.xlsx'), reverse=True)
-    if not logs:
-        st.info(t('no_log', L))
-    else:
-        path = st.selectbox(t('workbook', L), logs, format_func=lambda p: p.name)
-        df = pd.read_excel(path)
-        df = df.drop(columns=[c for c in df.columns if c in {t(k, x) for k in LINKS for x in LANGUAGES}])
-        dir_col = next((c for c in df.columns if c in {t('direction', x) for x in LANGUAGES}), None)
-        a, b, c = st.columns(3)
-        a.metric(t('events', L), len(df))
-        if dir_col:
-            b.metric(t('IN', L), int(df[dir_col].isin([t('IN', x) for x in LANGUAGES]).sum()))
-            c.metric(t('OUT', L), int(df[dir_col].isin([t('OUT', x) for x in LANGUAGES]).sum()))
-        st.dataframe(df.iloc[::-1], hide_index=True, use_container_width=True)
-        snaps = sorted((p for p in Path('logs/snapshots').rglob('*.jpg') if not p.stem.endswith('_plate')),
-                       key=lambda p: p.stat().st_mtime, reverse=True)[:8]
-        if snaps:
-            st.subheader(t('latest_snapshots', L))
-            cols = st.columns(4)
-            for i, p in enumerate(snaps):
-                cols[i % 4].image(str(p), caption=p.stem.replace('_', ' '))
+    if logs:
+        with st.expander(t('month_workbooks', L)):
+            for p in logs:
+                st.download_button(f'⬇ {p.name}', p.read_bytes(), p.name, key=f'dl_month_{p.name}',
+                                   mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')

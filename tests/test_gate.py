@@ -137,3 +137,22 @@ def test_unverified_container_upgraded_by_valid_read(tmp_path):
     r = log.log(event(code('MRSU4425761')), direction='IN', when=t0 + timedelta(seconds=30))
     rows = list(load_workbook(path).active.values)[1:]
     assert r['status'] == 'merged' and [(x[6], x[7]) for x in rows] == [('MRSU 442576 1', 'YES')]
+
+
+def test_read_and_export_one_day(tmp_path):
+    import io
+    from datetime import datetime
+    from src.gate import export_day, read_day
+    log = ExcelLog(str(tmp_path / 'logs' / 'gate_%Y-%m.xlsx'), tmp_path / 's')
+    log.log(event(code('TRLU6689574'), plate()), direction='IN', when=datetime(2026, 10, 14, 23, 59, 0))
+    log.log(event(code('MRSU4425761'), plate('5489', 'EXA')), direction='IN', when=datetime(2026, 10, 15, 8, 0, 0))
+    log.log(event(None, plate('5188', 'VDA')), direction='OUT', when=datetime(2026, 10, 15, 9, 30, 0))
+    rows = read_day(tmp_path / 'logs', '2026-10-15')
+    assert [(r['time'], r['plate'], r['container']) for r in rows] == \
+        [('08:00:00', '5489 EXA', 'MRSU 442576 1'), ('09:30:00', '5188 VDA', None)]
+    assert rows[0]['snapshot'].endswith('.jpg')                       # link target kept
+    wb = load_workbook(io.BytesIO(export_day(rows, 'ar')))
+    out = list(wb.active.values)
+    assert out[0][0] == 'التاريخ' and len(out) == 3 and out[1][3] == '5489 EXA'
+    assert wb.active.cell(row=2, column=13).hyperlink.target == rows[0]['snapshot']
+    assert read_day(tmp_path / 'logs', '2026-10-16') == []
