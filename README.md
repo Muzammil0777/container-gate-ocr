@@ -48,6 +48,34 @@ Everything is free and runs on a normal Windows laptop CPU: no GPU, no cloud, no
 Camera not showing up? `find_cameras.bat` checks the NVR connection, explains network vs.
 login problems and saves a snapshot of every channel to `logs\scan\`.
 
+## Run the app from a terminal
+
+`start_gate.bat` does all of this for you. To run the parts yourself, in the project folder:
+
+```bash
+py -3.12 -m pip install -r requirements.txt
+```
+
+**Terminal 1, the app** (stop it with Ctrl+C):
+
+```bash
+py -3.12 server.py --open
+```
+
+It opens http://localhost:8000 in the browser and prints the address for other computers and
+phones. `--port 8001` uses another port; leave out `--open` to not open the browser.
+
+**Terminal 2, detection** (optional: the **Start detection** button on the Live page starts it too):
+
+```bash
+py -3.12 cctv.py --config cameras.json
+```
+
+It reads the cameras you set up in the app; without any cameras it simply waits. Without a
+recorder you can still try everything on the **Test** page (sample photos, a video file).
+
+Node.js is **not** needed to run the app: the built web app (`web/dist`) is in the repository.
+
 ## The app
 
 | Page | What it's for |
@@ -190,15 +218,31 @@ above) shows each truck's plate and code only for 1–3 seconds, and with charac
 
 Only needed to change how the app looks or works. Needs Node.js 20 or newer.
 
+**Terminal 1, the API** (from the project folder):
+
+```bash
+py -3.12 server.py
+```
+
+**Terminal 2, the web app with live reload** (once: `npm install`):
+
 ```bash
 cd web
 npm install
 npm run dev
 ```
 
-`npm run dev` serves the app at http://localhost:5173 and passes API calls to `server.py`
-(run it too). After changes, `npm run build` rebuilds `web/dist`; commit it, since sites use
-the built app as it is. All text is in [src/i18n.py](src/i18n.py) (English and Arabic).
+Open http://localhost:5173: changes to `web/src` show up straight away, and API calls go to
+`server.py` on port 8000. When done, build and commit `web/dist`, since sites use the built
+app as it is:
+
+```bash
+cd web
+npm run build
+```
+
+All text is in [src/i18n.py](src/i18n.py) (English and Arabic); restart `server.py` after
+changing it. `py -3.12 -m pytest` runs the tests.
 
 ---
 
@@ -211,7 +255,8 @@ the built app as it is. All text is in [src/i18n.py](src/i18n.py) (English and A
 - **التثبيت:** ثبّت Python 3.12، ثم `py -3.12 -m pip install -r requirements.txt`
 - **التشغيل:** انقر مرتين على `start_gate.bat`، فيفتح التطبيق في المتصفح. في المرة الأولى يرشدك
   التطبيق خطوة بخطوة: اختر كلمة مرور للموقع، ثم أدخل بيانات جهاز التسجيل، ثم اضغط على صورة الكاميرا
-  التي ترى البوابة وحدد منطقة القراءة
+  التي ترى البوابة وحدد منطقة القراءة. أو من سطر الأوامر: `py -3.12 server.py --open` للتطبيق،
+  و`py -3.12 cctv.py --config cameras.json` للكشف
 - **الأجهزة الأخرى والهواتف:** افتح العنوان الظاهر في نافذة *Gate app* (مثل `http://192.168.1.103:8000`)
   وسجّل الدخول بكلمة مرور الموقع
 - **السجلات:** من صفحة السجلات اضغط على أي شاحنة لعرض صورة اللوحة وصورة الشاحنة وتصحيح القراءة، ونزّل
