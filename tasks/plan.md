@@ -47,7 +47,7 @@ Details, acceptance criteria and checks per task: [todo.md](todo.md).
 - [ ] http://localhost:8000 shows the React shell; switching to Arabic flips the layout
 
 ### Phase 2: Daily use (what gate staff use every day)
-- [ ] Task 3: Live page
+- [x] Task 3: Live page
 - [ ] Task 4: Records page: browse a day, see photos
 - [ ] Task 5: Records page: fix a reading, downloads
 

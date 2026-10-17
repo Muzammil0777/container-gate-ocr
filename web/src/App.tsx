@@ -6,6 +6,7 @@ import {
 import { useDisclosure } from '@mantine/hooks'
 import { IconCamera, IconClipboardList, IconFlask, IconTruck, IconVideo } from '@tabler/icons-react'
 import { api, type Lang, TextContext, type TextTable, useT } from './api'
+import Live from './pages/Live'
 
 const PAGES = [
   { key: 'live', icon: IconVideo },
@@ -122,9 +123,11 @@ function Shell({ lang, setLang, languages }: { lang: Lang; setLang: (l: Lang) =>
           <Title order={2}>{t(`nav_${page}`)}</Title>
           <Text c="dimmed">{t(`nav_${page}_help`)}</Text>
         </Stack>
-        <Paper withBorder p="xl" radius="lg">
-          <Text c="dimmed">{t('coming_soon')}</Text>
-        </Paper>
+        {page === 'live' ? <Live /> : (
+          <Paper withBorder p="xl" radius="lg">
+            <Text c="dimmed">{t('coming_soon')}</Text>
+          </Paper>
+        )}
       </AppShell.Main>
     </AppShell>
   )

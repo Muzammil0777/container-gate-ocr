@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 
 /** JSON from the gate server (server.py); throws on a network error or an error status. */
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -20,4 +20,31 @@ export function useT() {
     for (const [k, v] of Object.entries(vars)) s = s.replaceAll(`{${k}}`, String(v))
     return s
   }
+}
+
+export const useLang = () => useContext(TextContext).lang
+
+/** GET `path` now and every `everyMs`. `failed` once a request fails (until one succeeds),
+ *  `at` changes on every successful refresh. */
+export function usePoll<T>(path: string, everyMs: number) {
+  const [state, setState] = useState<{ data?: T; failed: boolean; at: number }>({ failed: false, at: 0 })
+  useEffect(() => {
+    let alive = true
+    const load = () => api<T>(path)
+      .then((data) => alive && setState({ data, failed: false, at: Date.now() }))
+      .catch(() => alive && setState((s) => ({ ...s, failed: true })))
+    load()
+    const id = setInterval(load, everyMs)
+    return () => { alive = false; clearInterval(id) }
+  }, [path, everyMs])
+  return state
+}
+
+/** A truck row as /api/records returns it (snapshot / plate_image: is there a photo). */
+export type Truck = {
+  id: number; date: string; time: string; direction: 'IN' | 'OUT' | null
+  plate: string | null; plate_ar: string | null; plate_verified: number | null
+  container: string | null; check_digit_ok: number | null; size_type: string | null
+  camera: string | null; location: string | null; confidence: number | null
+  corrected: number; needs_review: boolean; snapshot: boolean; plate_image: boolean
 }

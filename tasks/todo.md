@@ -52,7 +52,7 @@ checks `/api/health` and `/api/text` with FastAPI's TestClient.
 
 ## Phase 2: Daily use
 
-### Task 3: Live page
+### Task 3: Live page ✅
 **Description:** Camera tiles with the live annotated image (refreshing every 2 s) and a clear
 status per camera: green "Working", grey "Stopped", red "No picture for N s". If detection
 isn't running, one big "Start detection" button. Below: today's counts (trucks, in, out,
@@ -61,13 +61,13 @@ API: `GET /api/status`, `GET /api/live/{camera}.jpg`, `POST /api/service/start`,
 `GET /api/records?day=`, `GET /api/excel/day/{day}`.
 
 **Acceptance criteria:**
-- [ ] A truck logged by `cctv.py` appears within ~3 s without reloading the page
-- [ ] Camera offline / service stopped states are shown in plain words with colour + icon
-- [ ] Downloaded Excel is identical to what `to_excel` produces today
+- [x] A truck logged by `cctv.py` appears within ~3 s without reloading the page
+- [x] Camera offline / service stopped states are shown in plain words with colour + icon
+- [x] Downloaded Excel is identical to what `to_excel` produces today
 
-**Verification:** Tests for the endpoints; manual: run `cctv.py --source videos/...` and watch trucks appear.
+**Verification:** 5 endpoint tests; checked on a copy of the app with a two-truck test video: "Start detection" started the service, both trucks appeared live without reloading, in English and Arabic.
 **Dependencies:** Task 2
-**Files:** `server.py`, `web/src/pages/Live.tsx`, `web/src/components/TruckTable.tsx`, `tests/test_server.py`
+**Files:** `server.py`, `web/src/pages/Live.tsx`, `web/src/components/TruckTable.tsx`, `web/src/api.ts` (`usePoll`, `Truck`), `src/i18n.py`, `tests/test_server.py`
 **Scope:** M
 
 ### Task 4: Records page: browse a day, see photos
