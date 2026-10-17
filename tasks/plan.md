@@ -40,7 +40,7 @@ Details, acceptance criteria and checks per task: [todo.md](todo.md).
 
 ### Phase 1: Foundation
 - [x] Task 1: Move shared helpers out of app.py into src/config.py
-- [ ] Task 2: API server and React shell (one port, English/Arabic, navigation)
+- [x] Task 2: API server and React shell (one port, English/Arabic, navigation)
 
 ### Checkpoint: Foundation
 - [ ] `python -m pytest` passes, `npm run build` passes, `start_gate.bat` still works (Streamlit)

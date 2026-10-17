@@ -5,3 +5,6 @@ openpyxl>=3.1
 pandas
 streamlit>=1.40
 pytest
+fastapi>=0.110
+uvicorn>=0.29
+httpx

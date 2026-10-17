@@ -146,6 +146,21 @@ TEXT = {
     'roi_x': ('Left ↔ right (%)', 'يسار ↔ يمين (%)'),
     'roi_y': ('Top ↔ bottom (%)', 'أعلى ↔ أسفل (%)'),
     'roi_short': ('area', 'المنطقة'),
+    # Web app
+    'app_name': ('Gate Reader', 'قارئ البوابة'),
+    'nav_live': ('Live', 'مباشر'),
+    'nav_live_help': ("Cameras and today's trucks", 'الكاميرات وشاحنات اليوم'),
+    'nav_records': ('Records', 'السجلات'),
+    'nav_records_help': ('Check, fix and download', 'مراجعة وتصحيح وتنزيل'),
+    'nav_cameras': ('Cameras', 'الكاميرات'),
+    'nav_cameras_help': ('Recorder and camera setup', 'إعداد المسجّل والكاميرات'),
+    'nav_test': ('Test', 'اختبار'),
+    'nav_test_help': ('Try a photo or video', 'جرّب صورة أو فيديو'),
+    'coming_soon': ('This page is being built.', 'هذه الصفحة قيد الإنشاء.'),
+    'loading': ('Loading…', 'جارٍ التحميل…'),
+    'server_down': ("Can't reach the gate computer. Check that it is switched on, then reload this page.",
+                    'تعذّر الاتصال بجهاز البوابة. تأكد أنه يعمل ثم أعد تحميل الصفحة.'),
+    'menu': ('Menu', 'القائمة'),
 }
 
 

@@ -27,21 +27,21 @@ next to `Store.correct`. `app.py` imports them and behaves the same.
 **Files:** `src/config.py` (new), `src/store.py`, `app.py`, `tests/test_fix.py` (new)
 **Scope:** S
 
-### Task 2: API server and React shell
+### Task 2: API server and React shell ✅
 **Description:** `server.py` (FastAPI) serves `/api/text`, `/api/health` and the built React
 app from `web/dist`. `web/` is a Vite + React + TypeScript + Mantine app with a header (title,
 English/العربية switch), four sections (Live, Records, Cameras, Test) as empty pages, and
 right-to-left layout in Arabic. Language choice is remembered in the browser.
 
 **Acceptance criteria:**
-- [ ] One command starts one server on one port that serves both the API and the app
-- [ ] All visible text comes from `src/i18n.py`; Arabic switches the whole layout right-to-left
-- [ ] OCR imports load without the onnxruntime DLL error under uvicorn on this laptop
+- [x] One command starts one server on one port that serves both the API and the app
+- [x] All visible text comes from `src/i18n.py`; Arabic switches the whole layout right-to-left
+- [x] OCR imports load without the onnxruntime DLL error under uvicorn on this laptop
 
 **Verification:** Build passes; Run → shell visible, language switch works; `tests/test_server.py`
 checks `/api/health` and `/api/text` with FastAPI's TestClient.
 **Dependencies:** Task 1
-**Files:** `server.py`, `requirements.txt`, `web/` (package.json, vite config, `src/main.tsx`, `src/App.tsx`, `src/api.ts`), `tests/test_server.py`
+**Files:** `server.py`, `requirements.txt`, `web/` (package.json, vite config, `src/main.tsx`, `src/App.tsx`, `src/api.ts` with the `useT()` text hook), `src/i18n.py`, `.gitignore` (web/dist is committed), `tests/test_server.py`
 **Scope:** M
 
 ### Checkpoint: Foundation
