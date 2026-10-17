@@ -127,3 +127,48 @@ def find_size_type(texts):
 def format_code(code):
     """'TRLU6689574' -> 'TRLU 668957 4'"""
     return f"{code[:4]} {code[4:10]} {code[10]}"
+
+
+# Characters the OCR mixes up on container doors (used only to repair a consensus, see below)
+LOOKALIKE = {'0': '8693', '1': '74', '2': '7', '3': '859', '4': '19', '5': '638', '6': '508', '7': '12',
+             '8': '9603', '9': '804', 'M': 'NIH', 'N': 'MH', 'O': 'DQU', 'D': 'O', 'U': 'OV', 'I': 'L1'}
+
+
+def consensus_code(codes):
+    """One container code from several reads of the same container across frames,
+    e.g. ['MRSU786395?', 'MRSU7868395', 'MRSU7860395'] -> ('MRSU7869395', True).
+    A check-digit-valid read seen most often wins. Otherwise each position takes its
+    majority; if exactly one position has no clear (2/3) majority, the look-alike there that
+    makes the check digit come out right is used (needs >= 3 reads and a read check digit).
+    Returns (code, valid)."""
+    valid = [c for c in codes if c[10] != '?' and check_digit(c[:10]) == int(c[10])]
+    if valid:
+        return max(set(valid), key=valid.count), True
+    cols, picked, unsure = list(zip(*codes)), [], []
+    for i, col in enumerate(cols):
+        seen = [ch for ch in col if ch != '?']
+        if not seen:
+            picked.append('?')
+            continue
+        top = max(set(seen), key=seen.count)
+        picked.append(top)
+        if i < 10 and seen.count(top) * 3 < len(seen) * 2:
+            unsure.append(i)
+    code = ''.join(picked)
+    if code[10] == '?' or '?' in code[:10]:
+        return code, False
+    if check_digit(code[:10]) == int(code[10]):
+        return code, True
+    if len(codes) >= 3 and len(unsure) == 1:
+        i = unsure[0]
+        options = set(cols[i]) | {alt for ch in cols[i] for alt in LOOKALIKE.get(ch, '')}
+        fixes = [code[:i] + ch + code[i + 1:] for ch in options
+                 if ch != '?' and (ch.isdigit() == (i >= 4)) and check_digit(code[:i] + ch + code[i + 1:10]) == int(code[10])]
+        if len(fixes) == 1:
+            return fixes[0], True
+    return code, False
+
+
+def same_container(a, b):
+    """Two reads probably of the same container: at most 3 of the first 10 characters differ."""
+    return sum(x != y for x, y in zip(a[:10], b[:10])) <= 3

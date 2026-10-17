@@ -1,218 +1,185 @@
 # Container Gate OCR
 
-Reads **shipping-container codes** (ISO 6346, e.g. `MRSU 442576 1  45G1`) and **Saudi number
-plates** (e.g. `3231 UTA` / `و ط ا ٣٢٣١`) from images, videos and live CCTV cameras, and logs
-every truck entering or leaving a gate to Excel: date, time, direction, plate (Latin and
-Arabic), container code, camera, location, a snapshot and a plate close-up.
-English and Arabic app and Excel.
+Reads **shipping-container codes** (ISO 6346, e.g. `MRSU 786939 5  45G1`) and **Saudi number
+plates** (e.g. `3231 UTA` / `و ط ا ٣٢٣١`) from live CCTV cameras, and logs every truck entering
+or leaving a gate: date, time, direction, plate (Latin and Arabic), container code, camera,
+location, a snapshot and a plate close-up. Records are reviewed and corrected in the app, and
+downloaded as Excel per day or per month, or as a ZIP with photos. English and Arabic.
 
-Everything is free and runs on a normal CPU: no GPU, no cloud, no paid API.
+Everything is free and runs on a normal Windows laptop CPU: no GPU, no cloud, no paid API.
 
 [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://container-gate-ocr.streamlit.app/)
-**Live demo: https://container-gate-ocr.streamlit.app/**. Upload a photo of a truck with a
-container and see the code and plate it reads.
+**Online demo: https://container-gate-ocr.streamlit.app/** (Test tab: upload a photo of a truck).
 
 ![Output example](./output.jpg?raw=true "Output example")
 
+## Install on the site laptop
+
+1. Install **Python 3.12** from https://www.python.org/downloads/ (tick *Add python.exe to
+   PATH*). Python 3.13 or newer will **not** work: the OCR package supports up to 3.12.
+2. Get the project, either with `git clone https://github.com/Muzammil0777/container-gate-ocr.git`
+   or with *Code → Download ZIP*.
+3. In the project folder:
+
+   ```bash
+   py -3.12 -m pip install -r requirements.txt
+   ```
+
+4. Connect the laptop to the camera network. Use a cable to the NVR's LAN port or its switch;
+   the Wi-Fi can stay on for internet. If the cable gives an address starting `169.254`, give
+   the Ethernet port a fixed IP in the NVR's range.
+5. **Find the cameras:** double-click `find_cameras.bat`. It asks for the NVR IP, username and
+   password (hidden), checks the connection, and saves a snapshot of every channel to
+   `logs\scan\`. Pick the channel that sees the trucks best (see *Camera placement* below).
+6. **Start:** double-click `start_gate.bat`. It starts the detection service (minimised
+   window) and opens the app at http://localhost:8502.
+7. In the app's **📷 Cameras** tab:
+   - enter the NVR IP, username and password
+   - add each gate camera: channel, IN/OUT, location, and optionally a reading area
+   - detection starts on it within seconds
+8. **Optional:** double-click `install_autostart.bat` so everything starts when you sign in
+   to Windows (no administrator rights needed). `uninstall_autostart.bat` undoes it.
+
+## The app
+
+| Tab | What it's for |
+|---|---|
+| 🔴 **Live** | Each camera's view with its detections (🟢 online / 🔴 offline warning), today's trucks as they're logged, and ⬇ today's Excel. If detection isn't running, a button starts it. |
+| 📒 **Records** | Pick a day and click a truck to see its **snapshot and plate photo next to its details**. Fix a wrong plate or container and save; the Excel files update straight away. *Show only trucks that need review* lists readings to double-check. Downloads: **⬇ Excel (day)**, **📦 ZIP with photos (day)**, **⬇ Excel (month)**. |
+| 📷 **Cameras** | NVR login, Excel language, cameras (add / change / switch off / delete), reading area, and a one-frame camera test. |
+| 🧪 **Test** | Try a photo, a recorded video (simulates the gate and gives an Excel) or a stream URL, plus the OCR settings. |
+
+**Needs review (⚠️):** shown when the plate wasn't confirmed by its Arabic row, the
+container's check digit wasn't confirmed, or one of them is missing. ✏️ marks rows a person
+corrected. Corrections are also kept in `logs\corrections.jsonl` with the photo, for
+improving accuracy later.
+
+## Where the data is
+
+| Path | What |
+|---|---|
+| `logs\gate.db` | The master record (SQLite database). Safe with several programs reading and writing, and survives power cuts. |
+| `logs\excel\gate_log_YYYY-MM-DD.xlsx` | One Excel per day, rewritten after every truck |
+| `logs\excel\gate_log_YYYY-MM.xlsx` | One Excel per month, for audits |
+| `logs\snapshots\YYYY-MM-DD\` | Truck snapshot and plate close-up for every row |
+| `cameras.json` | Settings, including the NVR password. Stays on this computer (git-ignored). |
+
+Opening an Excel file in Excel while trucks are being logged is fine: the data is safe in
+the database, and the file is updated as soon as Excel closes it.
+
 ## How it works
 
-1. **OCR on the whole frame**: [RapidOCR](https://github.com/RapidAI/RapidOCR) (PaddleOCR
-   models on ONNX Runtime) finds and reads all text. No custom detector or training needed.
-2. **Container codes** ([src/iso6346.py](src/iso6346.py)): finds `owner(3) + U/J/Z +
-   serial(6) + check digit`, even when the pieces are separate boxes in any order. OCR
-   confusions (`0↔O/U`, `8↔B`, `1↔I`…) are fixed **only when the check digit confirms
-   the fix**. Pieces far apart in the image are never combined.
-3. **Recovery passes** ([src/recognizer.py](src/recognizer.py)), only when needed:
-   - the boxed check digit is read on its own, and accepted only if it equals the computed digit
-   - the code area is re-read at 2× zoom
-   - vertical side codes are found on the frame rotated 90° and re-read as one line
-4. **Saudi plates** ([src/saudi_plate.py](src/saudi_plate.py)): a Saudi plate prints the
-   number twice, in Latin on the bottom row and in Arabic on the top row. Only 17 letters
-   are used, each with one fixed Arabic/Latin pair (A=ا, B=ب, J=ح, D=د, R=ر, S=س, X=ص, T=ط,
-   E=ع, G=ق, K=ك, L=ل, Z=م, N=ن, H=هـ, U=و, V=ى).
-   - The Latin row is read first. If it isn't found in the main pass, white plate-shaped
-     rectangles are tried.
-   - The Arabic row is then read with an Arabic recognition model (PP-OCRv5).
-   - When both rows agree, the plate is marked **verified**, much like a container check digit.
-5. **Gate logic** ([src/gate.py](src/gate.py)): a truck is seen in many frames. The plate
-   and the container are each confirmed after several reads, then logged together as
-   **one Excel row per truck**. The same truck is then ignored for a cooldown while it
-   waits at the barrier.
-
-**Accuracy on `images/`** (`python -m pytest`, see `tests/test_samples.py`):
-
-| | Result |
-|---|---|
-| Container codes | 18 of 22 images give a check-digit-confirmed code, 0 false codes (misses are blurry vertical crops) |
-| Saudi plates | 3 of 3 read, all confirmed by the Arabic row; no confirmed plate on any non-Saudi image |
-| Speed | About 1–2.5 s per frame on a laptop CPU |
-
-## Setup
-
-```bash
-pip install -r requirements.txt
+```
+cameras ──► cctv.py (detection service) ──► logs\gate.db ──► Excel files
+                 ▲   │                           │
+     cameras.json│   └─► live frames + status ──►├─► app.py (Streamlit): Live / Records / Cameras / Test
+                 └────────── app writes settings ┘
 ```
 
-Python 3.9+. The main OCR models ship inside `rapidocr_onnxruntime`. The Arabic plate model
-is in `models/` (8 MB, Apache-2.0, from [RapidAI/RapidOCR](https://www.modelscope.cn/models/RapidAI/RapidOCR)).
+- **Detection runs as its own service** (`cctv.py`), separate from the app. It follows
+  `cameras.json` (cameras added or stopped in the app take effect within a second),
+  reconnects dropped streams, refuses to run twice, and `run_service.bat` restarts it if it
+  ever stops.
+- **Search small, read sharp** ([src/recognizer.py](src/recognizer.py)): text is *found* on a
+  downscaled frame, but each piece is *read* from the full-resolution 4K frame.
+- **Follow what was found** ([src/scanner.py](src/scanner.py)): after a full scan finds a code
+  or plate, the next looks only search small windows around it, which is cheaper. That gives
+  more reads in the few seconds a truck is readable.
+- **Containers** ([src/iso6346.py](src/iso6346.py)): `owner + U/J/Z + serial + check digit`.
+  - A boxed check digit is re-read on its own.
+  - Reads from several frames are **combined** (consensus), e.g. `MRSU 786395 ?` +
+    `MRSU 786839 5` + `MRSU 786039 5` → **`MRSU 786939 5`** ✅. The check digit settles a
+    single uncertain digit, and only among look-alikes.
+- **Saudi plates** ([src/saudi_plate.py](src/saudi_plate.py)): the Latin row (`3231 UTA`) is
+  read and checked against the Arabic row (`و ط ا ٣٢٣١`) with an Arabic model (PP-OCRv5).
+  The 17 plate letters map one-to-one between Arabic and Latin.
+- **One row per truck** ([src/gate.py](src/gate.py), [src/store.py](src/store.py)): plate and
+  container are confirmed over several frames and logged together. A repeat within 5 minutes
+  (same direction) never creates a second row; if the repeat adds a plate or a confirmed check
+  digit, the earlier row is filled in instead.
 
-## 1. Try it: Streamlit demo
+## Accuracy and speed
 
-Use the hosted demo at https://container-gate-ocr.streamlit.app/, or run it locally
-(faster, and it can reach cameras on your own network):
+`python -m pytest` checks the sample images in `images/`, including 3 real Saudi gate photos:
+- **Containers:** 18 of 22 images give a check-digit-confirmed code, with 0 false codes.
+- **Plates:** all 3 Saudi plates are read and confirmed by the Arabic row.
 
-```bash
-streamlit run app.py
-```
-
-Switch between **English / العربية** at the top of the sidebar. In Arabic the whole app
-switches to a right-to-left layout.
-
-| Tab | What it does |
-|---|---|
-| 📷 Image | Upload photos (or pick a sample) and see the container code, plate, check status and timing |
-| 🎞️ Video → gate log | Upload a gate video: simulates the CCTV logger and lets you download the Excel log |
-| 📡 Camera test | Paste an RTSP URL and grab one frame to check the camera angle is readable |
-| 📒 Gate log | Browse the Excel logs (English or Arabic) and snapshots written by `cctv.py` |
-
-Single image from the command line: `python single_frame_process.py -i images/ksa_mrsu_3231uta.jpg`
-
-## 2. Run it on CCTV cameras
-
-### On site with a Hikvision NVR
-
-1. Connect the laptop to the NVR's network (same switch or Wi-Fi). Get the NVR's IP
-   address and a username/password from the site; the IP is also on the NVR's monitor
-   under *Menu → Configuration → Network*.
-2. **Find the cameras:** double-click `find_cameras.bat`, or run `py -3.12 cctv.py --scan`.
-   It asks for the IP, username and password (hidden), checks the connection, and saves a
-   snapshot of every working channel to `logs\scan\`. Note the channel that sees the back
-   of the trucks.
-3. **Start the app:** double-click `start_gate.bat` (or `py -3.12 -m streamlit run app.py
-   --server.port 8502`) and open the **🔴 Live** tab at http://localhost:8502.
-4. **Start a camera:** in *➕ Start a camera*, enter the NVR IP, username, password and the
-   channel, plus a camera name, direction (IN/OUT) and location, then press
-   **▶ Start live detection**. Repeat this for each gate camera.
-   - The Live tab shows each camera with its detections, refreshed every 2 s, plus the
-     latest trucks logged.
-   - Every truck becomes one Excel row (plate and container) as it passes.
-   - Detection keeps running with the browser closed, as long as the app's PowerShell
-     window stays open.
-   - With *Remember and start automatically* ticked, the settings are saved to
-     `cameras.json` on this computer, and the cameras start again whenever the app is opened.
-
-If the scan or the Start button can't connect, it tells you whether the problem is the
-network (wrong IP, laptop on another network) or the login (wrong password, account
-locked, RTSP disabled). Streams use RTSP over TCP with automatic reconnect.
-
-**Duplicates:** the Excel log is checked before every write. The same container or plate in
-the same direction within `cooldown_s` (5 minutes) is never added twice, even across
-restarts or two cameras. If the repeat reading adds something the first row was missing (a
-plate, or a confirmed check digit), the earlier row is filled in instead.
-
-### Running without the app (headless)
-
-`cctv.py` does the same logging without the app, e.g. as a Windows startup task. Don't run
-both for the same camera: duplicates are still prevented, but the CPU does the work twice.
+**On real CCTV footage**, use the benchmark. It plays a recording through the pipeline exactly
+like a live camera, skipping frames while busy:
 
 ```bash
-copy cameras.example.json cameras.json      # then edit it
-python cctv.py --config cameras.json
+py -3.12 bench.py "C:\path\to\nvr_export.mp4" --realtime --follow --roi 0,0,0.66,0.78 --max-side 1600
 ```
 
-Point each camera at the back of the trailer, so it sees both the container doors and the
-rear number plate. Use one camera per lane: set `"direction": "IN"` on the entry camera and
-`"OUT"` on the exit camera. `cameras.json` holds camera passwords, so it's git-ignored.
-Common RTSP URLs:
+| On a Ryzen 7 5800U laptop, wide-angle 4K yard camera | Before | Now |
+|---|---|---|
+| Looks per second | 0.34 | about 0.9 |
+| Trucks logged (12 passes in 2 clips) | 0 | 2, both correct |
+| Wrong rows | 0 | 0 |
 
-| Brand | URL |
-|---|---|
-| Hikvision | `"nvr"` block + `"channel"` (or `rtsp://USER:PASS@IP:554/Streaming/Channels/101`) |
-| Dahua / Amcrest | `rtsp://USER:PASS@IP:554/cam/realmonitor?channel=1&subtype=0` |
-| Webcam / test | `0`, or a video file path |
+## Camera placement (the biggest factor)
 
-Quick single-camera test: `python cctv.py --source videos/gate.mp4 --direction IN --location "Gate 1" --show`
+The software reads what the camera shows. A wide overview camera (like the yard camera
+above) shows each truck's plate and code only for 1–3 seconds, and with characters about
+20 px tall; that's why only a few trucks get logged. For reliable logging:
 
-**Excel log:** `logs/gate_log_YYYY-MM.xlsx`, one workbook per month and one row per truck.
-With `"language": "ar"`, the headers and values are in Arabic and the sheet is right-to-left.
+- **Plate:** a camera facing incoming trucks at the gate lane, 5–10 m away, zoomed so the
+  plate is **at least 150 px wide** in the picture, with no motion blur. A Hikvision
+  ANPR/LPR camera is ideal.
+- **Container:** a camera that sees the container's rear doors (or side) from **under about 10 m**,
+  so the code's characters are **at least 25–30 px tall**. Trucks usually stop at the barrier,
+  which gives plenty of readable frames.
+- The 3 test photos in `images/ksa_*.jpg` (taken behind the trucks) read perfectly. That's
+  the view to aim for.
+- **Reading area:** use the *Reading area* sliders (Cameras tab) to skip sky and far-away
+  parts of the picture. It's faster, and the area is read sharper.
 
-| Date | Time | Direction | Plate | Plate (Arabic) | Plate Check | Container Code | Check Digit OK | Size/Type | Camera | Location | Confidence | Snapshot | Plate Image |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 2026-10-14 | 16:06:14 | IN | 3231 UTA | و ط ا ٣٢٣١ | Arabic + Latin match | MRSU 442576 1 | YES | 45G1 | Gate 1 Entry | Dammam gate | 0.986 | open image | open image |
-
-Snapshots (code and plate highlighted) and plate close-ups are saved to
-`logs/snapshots/YYYY-MM-DD/` and linked from the last two columns.
-
-**Behaviour you should know about**
-- **When a row is written:** as soon as both the plate and the container are confirmed.
-  If one of them can't be read (or the truck has no container), the row is written after
-  10 s, or 5 s after the truck leaves the view, with that field left empty.
-- **`Plate Check = Latin only`:** the Arabic row couldn't confirm the Latin reading. The
-  Arabic plate is still filled in, converted from the Latin letters. Check against the
-  plate close-up.
-- **`Check Digit OK = NO`:** the container's check digit was unreadable (shown as `?`) or
-  didn't match. Such rows are logged rather than dropped, so a truck is never silently
-  missed. Set `"accept_unverified": false` to drop them.
-- **Don't keep the live workbook open in Excel.** Windows locks it. Rows are then queued in
-  memory and written once it's closed (a warning is printed), but nothing reaches the file
-  while it's open. Use the Streamlit *Gate log* tab, or open a copy.
-- **Workbooks with older columns or another language are never mixed.** New rows go to
-  `..._2.xlsx` instead.
-- **Live streams:** the newest frame is always processed, so OCR never lags behind the
-  feed. Dropped RTSP connections reconnect automatically, and a static empty scene is only
-  re-checked every 2 s to save CPU.
-
-**Run on startup (free):** Windows Task Scheduler → *Create Task* → trigger *At startup* →
-action `python cctv.py --config cameras.json` with *Start in* set to this folder.
-
-**Settings** (`cameras.json`, all optional)
+## Settings (`cameras.json`, all optional)
 
 | Key | Default | Meaning |
 |---|---|---|
 | `language` | `en` | Excel headers and values: `en` or `ar` |
 | `plates` | true | Read Saudi number plates |
-| `fps` | 2 | OCR passes per second per camera |
-| `min_hits` | 2 | Reads needed to confirm a code/plate (2× without check digit / Arabic match) |
+| `fps` | 4 | Looks per second per camera, at most |
+| `min_hits` | 2 | Reads needed to confirm a code/plate (2× for a container without a confirmed check digit) |
 | `gap_s` / `max_wait_s` | 5 / 10 | When a truck's row is written if only one of plate/container was read |
-| `cooldown_s` | 300 | Ignore the same container or plate for this long |
-| `max_side` | 1920 | Frames are downscaled to this before OCR |
-| `use_cuda` | false | NVIDIA GPU: `pip install onnxruntime-gpu`, then set `true` |
+| `cooldown_s` | 300 | The same truck isn't logged again in the same direction within this time |
+| `max_side` | 1920 | Search size for whole frames (1600 when a camera has a reading area) |
+| `use_cuda` | false | NVIDIA GPU: `pip install onnxruntime-gpu`, then `true` (built-in Intel/AMD graphics doesn't help) |
+| camera `roi` | whole frame | Reading area `[left, top, right, bottom]` as fractions, set with the sliders in the app |
 
-## Known limitations / next steps
+## Command line
 
-- **Saudi plates only.** Plates from other countries may show up as unconfirmed `Latin only` readings.
-- **Trucks less than about 5 s apart** could have their plate and container paired wrongly.
-  Each row's snapshot shows what was paired.
-- **Blurry or very narrow vertical side codes** are still missed (`code4`, `face2`). The
-  best free fix is a better camera angle: face the rear doors and get at least 20 px of
-  character height.
-- **Direction comes from the camera**, not from vehicle movement.
-- **Built-in widgets stay in English.** A few of Streamlit's own widgets (e.g. the
-  "Drag and drop files here" box) aren't translated.
-- **Fine-tuning:** to push accuracy further, fine-tune the PP-OCR models on your own gate
-  footage. It's free on Google Colab or Kaggle GPUs.
+| Command | What |
+|---|---|
+| `py -3.12 cctv.py --scan` | Find cameras on the NVR (asks for login) |
+| `py -3.12 cctv.py --config cameras.json` | Run the detection service |
+| `py -3.12 cctv.py --source video.mp4 --direction IN` | Log a single video or camera without the app |
+| `py -3.12 bench.py video.mp4 --realtime --follow` | Benchmark a recording |
+| `py -3.12 single_frame_process.py -i photo.jpg` | Read one photo |
+| `py -3.12 -m pytest` | Tests |
 
-## Development
+## Known limitations
 
-```bash
-python -m pytest        # unit tests + accuracy regression on images/
-```
-
-Troubleshooting (Windows): `DLL load failed while importing onnxruntime_pybind11_state`
-happens when `pandas`/`pyarrow` is imported before `onnxruntime`. Import `src.recognizer`
-first (as `app.py` does), or `pip install -U onnxruntime pyarrow`.
+- **Saudi plates only.** Plates from other countries may appear as unconfirmed "Latin only" readings.
+- **Close trucks:** trucks less than about 5 s apart could have plate and container paired
+  wrongly. The snapshot shows what was paired, and it can be fixed in Records.
+- **Built-in widgets stay in English:** a few of Streamlit's own widgets (the file upload box)
+  aren't translated.
+- **Windows DLL error:** if you see `DLL load failed while importing onnxruntime_pybind11_state`,
+  `pandas`/`pyarrow` was imported before `onnxruntime`. The app avoids this by import order.
 
 ---
 
 ## بالعربية
 
-**قارئ الحاويات واللوحات** يقرأ أرقام الحاويات (ISO 6346) ولوحات الشاحنات السعودية من الصور
-والفيديو وكاميرات المراقبة، ويسجّل كل شاحنة تدخل أو تخرج من البوابة في ملف Excel مع التاريخ
-والوقت والاتجاه ورقم اللوحة (لاتيني وعربي) ورقم الحاوية والكاميرا والموقع وصورة للشاحنة وصورة للوحة.
-مجاني بالكامل ويعمل على المعالج العادي.
+**قارئ الحاويات واللوحات** يقرأ أرقام الحاويات ولوحات الشاحنات السعودية من كاميرات المراقبة،
+ويسجّل كل شاحنة تدخل أو تخرج مع التاريخ والوقت والاتجاه ورقم اللوحة (لاتيني وعربي) ورقم الحاوية
+وصورة للشاحنة وصورة للوحة. مجاني ويعمل على معالج الجهاز.
 
-- **التجربة:** https://container-gate-ocr.streamlit.app/ (اختر «العربية» أعلى القائمة الجانبية)
-- **التشغيل على الكاميرات:** انسخ `cameras.example.json` إلى `cameras.json`، وضع
-  `"language": "ar"` لسجل Excel بالعربية، ثم شغّل `python cctv.py --config cameras.json`
-- **تحقق اللوحة:** يُقرأ السطر اللاتيني ثم السطر العربي، وعند تطابقهما تظهر «مطابق عربي ولاتيني»
-- **لا تفتح ملف السجل في Excel أثناء التشغيل**، فالصفوف تُحفظ مؤقتاً وتُكتب بعد إغلاقه
+- **التثبيت:** ثبّت Python 3.12، ثم `py -3.12 -m pip install -r requirements.txt`
+- **التشغيل:** انقر مرتين على `start_gate.bat`، ثم أضف جهاز التسجيل والكاميرات من تبويب 📷 الكاميرات
+- **السجلات:** من تبويب 📒 السجلات اضغط على أي شاحنة لعرض صورتها وصورة اللوحة وتصحيح القراءة، ونزّل
+  ملف Excel لليوم أو للشهر أو ملف ZIP مع الصور
+- **التشغيل التلقائي:** انقر مرتين على `install_autostart.bat`
+- **أهم عامل للدقة هو موقع الكاميرا:** كاميرا قريبة من مسار البوابة تُظهر اللوحة بعرض 150 بكسل على الأقل

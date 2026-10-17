@@ -78,17 +78,22 @@ def _columns(items):
 
 
 class Recognizer:
-    def __init__(self, max_side=1920, use_cuda=False):
-        """max_side: frames are downscaled to this before OCR (speed vs. small far-away text).
+    def __init__(self, max_side=1920, use_cuda=False, sharp=True, vertical_every=1):
+        """max_side: frames are downscaled to this to *find* text (speed vs. small far-away text).
+        sharp: read each found text box from the full-resolution frame instead of the
+        downscaled one (sharper small text from 4K cameras, at almost no extra cost).
+        vertical_every: run the (expensive) vertical-code pass only on every Nth call; live
+        cameras use 3, since a truck stays in view for several looks anyway.
         use_cuda needs `pip install onnxruntime-gpu` and an NVIDIA GPU."""
-        self.max_side = max_side
+        self.max_side, self.sharp = max_side, sharp
+        self.vertical_every, self.calls = max(1, vertical_every), 0
         self.engine = RapidOCR(det_use_cuda=use_cuda, rec_use_cuda=use_cuda, cls_use_cuda=use_cuda)
         # Arabic recognition (PP-OCRv5) for the top row of Saudi plates
         self.arabic = RapidOCR(rec_model_path=str(MODELS / 'arabic_PP-OCRv5_rec_mobile.onnx'),
                                rec_keys_path=str(MODELS / 'ppocrv5_arabic_dict.txt'),
                                rec_use_cuda=use_cuda)
 
-    def __call__(self, frame, zoom=True, vertical=True, plates=True):
+    def __call__(self, frame, zoom=True, vertical=True, plates=True, max_side=None):
         """Returns {'codes': [...], 'plates': [...], 'texts': [...], 'ms': float}. Each code is a
         dict with code, valid (check digit OK), size_type, score, box (x, y, w, h) in frame pixels.
         Each plate: plate ('5188 VDA'), digits, letters, arabic, verified (Arabic row agrees),
@@ -98,6 +103,7 @@ class Recognizer:
         vertical: if still nothing valid, look for vertically stacked codes (container side
         corners) by detecting text on the frame rotated 90 degrees; one extra pass."""
         t0 = time.perf_counter()
+        self.side = max_side or self.max_side  # this call's search size (per camera)
         out = self._read(frame)
         main_items = out['items']
         for c in out['codes']:
@@ -106,7 +112,8 @@ class Recognizer:
         if zoom and not any(c['valid'] for c in out['codes']):
             # zoom on the unverified code if there is one, else the tallest number
             serials = [c['box'] for c in out['codes']] or sorted(
-                (b for t, b in zip(out['texts'], out['boxes']) if sum(ch.isdigit() for ch in t) >= 5),
+                (b for t, b in zip(out['texts'], out['boxes'])
+                 if sum(ch.isdigit() for ch in t) >= 5 and not _is_overlay(t)),
                 key=lambda b: -b[3])
             if serials:
                 x, y, w, h = serials[0]
@@ -120,13 +127,15 @@ class Recognizer:
                         c['box'] = (x0 + bx // 2, y0 + by // 2, bw // 2, bh // 2)
                     serials = {c['code'][4:10] for c in found}
                     out['codes'] = found + [c for c in out['codes'] if c['code'][4:10] not in serials]
-        if vertical and not any(c['valid'] for c in out['codes']):
+        self.calls += 1
+        if vertical and self.calls % self.vertical_every == 0 and not any(c['valid'] for c in out['codes']):
             extra = self._vertical_items(frame)
             if extra:
                 v = self._codes(out['items'] + extra)
                 if any(c['valid'] for c in v['codes']) or not out['codes']:
                     out = v
-        out['plates'] = self._plates(frame, main_items) if plates else []
+        out['plates'] = [p for p in (self._plates(frame, main_items) if plates else [])
+                         if not any(_overlaps(p['latin_box'], c['box']) for c in out['codes'])]
         out['ms'] = round((time.perf_counter() - t0) * 1000)
         del out['items']
         return out
@@ -140,11 +149,17 @@ class Recognizer:
         if not boxes:
             return
         sx, sy, sw, sh = boxes[0]
-        text, _ = self._rec(self.engine, frame[max(0, sy - sh // 5):sy + sh + sh // 5,
-                                               sx + sw:sx + sw + int(1.6 * sh)])
         expected = str(check_digit(code['code'][:10]))
-        if expected in {TO_DIGIT.get(ch, ch) for ch in normalize(text)}:
-            code['code'], code['valid'] = code['code'][:10] + expected, True
+        y0, y1, x0 = max(0, sy - sh // 5), sy + sh + sh // 5, sx + sw
+        # The box lines can swamp a single digit, so try the spot as is, without the box
+        # border, and nudged right; any read only counts if it is the computed digit.
+        for crop in (frame[y0:y1, x0:x0 + int(1.6 * sh)],
+                     frame[sy + sh // 6:sy + sh - sh // 6, x0 + sh // 4:x0 + int(1.3 * sh)],
+                     frame[y0:y1, x0 + sh // 3:x0 + 2 * sh]):
+            text, _ = self._rec(self.engine, crop)
+            if expected in {TO_DIGIT.get(ch, ch) for ch in normalize(text)}:
+                code['code'], code['valid'] = code['code'][:10] + expected, True
+                return
 
     def _rec(self, engine, crop):
         """Recognition only (no detection) on a crop scaled to the model's 48 px height."""
@@ -155,18 +170,20 @@ class Recognizer:
                         use_det=False, use_cls=False)
         return (res[0][0], float(res[0][1])) if res else ('', 0.0)
 
-    def _plates(self, frame, items):
+    def _plates(self, frame, items, fallback=True):
         """Find Saudi plates: the Latin row in the main OCR pass, or (if none) white
         plate-shaped rectangles read row by row. Then cross-check with the Arabic row above."""
         found = []  # (digits, letters, score, latin_box)
+        items = [it for it in items if not _is_overlay(it[0])]
         for t, s, b in items:
             if (p := parse_latin(t)):
                 found.append((*p, s, b))
         for (ta, sa, ba), (tb, sb, bb) in ((a, b) for a in items for b in items if a is not b):
-            # digits box and letters box side by side on one line
-            if ba[0] < bb[0] and abs(ba[1] - bb[1]) < 0.5 * ba[3] and _near(ba, bb)                     and (p := parse_latin(ta + tb)):
+            # a digits box and a 3-letter box side by side on one line
+            if ba[0] < bb[0] and abs(ba[1] - bb[1]) < 0.5 * ba[3] and _near(ba, bb) \
+                    and 1 <= len(normalize(ta)) <= 4 and len(normalize(tb)) == 3 and (p := parse_latin(ta + tb)):
                 found.append((*p, min(sa, sb), _union([ba, bb])))
-        if not found:
+        if not found and fallback:
             for x, y, w, h in _plate_candidates(frame):
                 text, s = self._rec(self.engine, frame[y + h // 2:y + h, x:x + w])
                 if (p := parse_latin(text)):
@@ -189,7 +206,7 @@ class Recognizer:
         return sorted(plates.values(), key=lambda p: (p['verified'], p['score']), reverse=True)
 
     def _small(self, frame):
-        scale = min(1.0, self.max_side / max(frame.shape[:2]))
+        scale = min(1.0, getattr(self, 'side', self.max_side) / max(frame.shape[:2]))
         small = cv2.resize(frame, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA) \
             if scale < 1 else frame
         return small, scale
@@ -235,12 +252,24 @@ class Recognizer:
                 items.append(item)
         return items
 
-    def _read(self, frame):
+    def _ocr(self, frame):
+        """[(points in frame pixels, text, score)]: detect on the downscaled frame; read the
+        boxes either from it (classic) or, with sharp, from the full-resolution frame."""
         small, scale = self._small(frame)
-        result, _ = self.engine(small, use_cls=False)
+        if not self.sharp or scale == 1:
+            result, _ = self.engine(small, use_cls=False)
+            return [(np.array(p) / scale, t, s) for p, t, s in result or []]
+        boxes, _ = self.engine(small, use_cls=False, use_rec=False)
+        if not boxes:
+            return []
+        full = [np.array(b, dtype=np.float32) / scale for b in boxes]
+        rec, _ = self.engine.text_rec(self.engine.get_crop_img_list(frame, full))
+        return [(p, r[0], r[1]) for p, r in zip(full, rec) if r[1] >= self.engine.text_score]
+
+    def _read(self, frame):
         items = []  # (text, score, (x, y, w, h)) in full-frame pixels
-        for pts, text, score in result or []:
-            x, y, w, h = cv2.boundingRect((np.array(pts) / scale).astype(np.int32))
+        for pts, text, score in self._ocr(frame):
+            x, y, w, h = cv2.boundingRect(np.array(pts).astype(np.int32))
             items.append((text, float(score), (x, y, w, h)))
             if h > 2.5 * w:  # vertical side code: re-read it unstacked
                 # the owner letters above are often missed by the detector
@@ -250,7 +279,7 @@ class Recognizer:
         return self._codes(items)
 
     def _codes(self, items):
-
+        items = [it for it in items if not _is_overlay(it[0])]  # the camera's date/time stamp
         items += _columns(items)
         texts = [t for t, _, _ in items]
         size_type = find_size_type(texts)
@@ -272,6 +301,15 @@ class Recognizer:
             })
         codes.sort(key=lambda c: (c['valid'], c['score']), reverse=True)
         return {'codes': codes, 'texts': texts, 'boxes': [b for _, _, b in items], 'items': items}
+
+
+def _is_overlay(text):
+    """The camera's own date/time overlay ('10-15-2026 Thu 08:31:40'): never a container."""
+    return ':' in text or text.count('-') >= 2 or sum(ch.isdigit() for ch in text) > 8
+
+
+def _overlaps(a, b):
+    return a[0] < b[0] + b[2] and b[0] < a[0] + a[2] and a[1] < b[1] + b[3] and b[1] < a[1] + a[3]
 
 
 def _union(boxes):

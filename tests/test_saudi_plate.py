@@ -26,3 +26,9 @@ def test_arabic_cross_check_with_real_model_output():
     assert not arabic_matches(['٥٤٨٩ ٤م ١'], '5489', 'EXA')       # letters not confirmed
     assert not arabic_matches(['٣٢٣١٩٥ط١'], '3231', 'UTB')        # wrong letter
     assert not arabic_matches(['٣٢٣٩٥ط١'], '3231', 'UTA')         # wrong digits
+
+
+def test_container_fragments_are_not_plates():
+    # seen in the site footage: serial '69395' + 'SU' of 'MRSU' read as plate '6939 SSU'
+    assert parse_latin('69395SU') is None
+    assert parse_latin('5188VOA') == ('5188', 'VDA')    # letter look-alikes are still fixed

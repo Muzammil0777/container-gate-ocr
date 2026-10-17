@@ -1,5 +1,13 @@
-"""Streamlit demo for testing the recognizer:  streamlit run app.py"""
+"""Gate OCR app:  streamlit run app.py
+
+Live (cameras + today's trucks), Records (review, fix, download), Cameras (setup) and Test.
+Detection itself runs in the gate service (cctv.py), which this app starts if needed and
+configures through cameras.json; records come from the database the service writes.
+"""
 import json
+import os
+import subprocess
+import sys
 import tempfile
 import time
 from datetime import date
@@ -9,10 +17,12 @@ from pathlib import Path
 # that makes onnxruntime fail with "DLL load failed while importing onnxruntime_pybind11_state".
 from src.recognizer import Recognizer, draw  # noqa: I001
 from src.camera import hikvision_url, open_capture, port_open
-from cctv import LiveManager, _safe
-from src.gate import COLUMNS, LINKS, ExcelLog, GateTracker, export_day, read_day
+from cctv import DEFAULTS, _safe
+from src.gate import GateLog, GateTracker
 from src.i18n import LANGUAGES, t
-from src.iso6346 import format_code
+from src.iso6346 import check_digit, format_code, normalize
+from src.saudi_plate import format_plate, parse_latin, to_arabic
+from src.store import COLUMNS, LINKS, Store, display, needs_review, to_excel, to_zip
 
 import cv2
 import numpy as np
@@ -21,14 +31,86 @@ import streamlit as st
 
 st.set_page_config(page_title='Container & Plate Gate OCR', page_icon='🚛', layout='wide')
 
+ROOT = Path(__file__).resolve().parent
+CONFIG = ROOT / 'cameras.json'
+LIVE = ROOT / DEFAULTS['live_dir']
+XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+
+# ---------- shared helpers ----------
 
 @st.cache_resource(max_entries=2)  # each model copy is ~100 MB; free hosting has ~1 GB
 def get_recognizer(max_side):
     return Recognizer(max_side=max_side)
 
 
+@st.cache_resource
+def get_store():
+    return Store(str(ROOT / DEFAULTS['db']))
+
+
+def load_config():
+    try:
+        return json.loads(CONFIG.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_config(cfg):
+    """cameras.json is read by the gate service; it applies changes within a second."""
+    tmp = CONFIG.with_suffix('.tmp')
+    tmp.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    os.replace(tmp, CONFIG)
+
+
+def service_status():
+    """(service running?, {camera name: status}) from the status file the service writes."""
+    try:
+        s = json.loads((LIVE / 'status.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return False, {}
+    return time.time() - s.get('updated', 0) < 10, s.get('cameras', {})
+
+
+def start_service():
+    """Start the gate service in the background (no window); its output goes to logs/service.log."""
+    if not CONFIG.exists():
+        save_config({})
+    (ROOT / 'logs').mkdir(exist_ok=True)
+    log = open(ROOT / 'logs' / 'service.log', 'a', encoding='utf-8')
+    flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0) | getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)
+    subprocess.Popen([sys.executable, str(ROOT / 'cctv.py'), '--config', str(CONFIG)], cwd=ROOT,
+                     stdout=log, stderr=subprocess.STDOUT, creationflags=flags)
+
+
 def rgb(img):
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+
+def records_table(rows, L):
+    """Stored rows as a display table (newest first), with a review marker column."""
+    df = pd.DataFrame([{**display(r, L), 'review': '⚠️' if needs_review(r) else ('✏️' if r.get('corrected') else '')}
+                       for r in rows])
+    if df.empty:
+        return df
+    return df[['review'] + [c for c in COLUMNS if c not in LINKS]].rename(columns=lambda c: t(c, L))
+
+
+def counts(rows, L):
+    a, b, c, d = st.columns(4)
+    a.metric(t('events', L), len(rows))
+    b.metric(t('IN', L), sum(r.get('direction') == 'IN' for r in rows))
+    c.metric(t('OUT', L), sum(r.get('direction') == 'OUT' for r in rows))
+    d.metric(t('needs_review', L), sum(needs_review(r) for r in rows))
+
+
+def zip_button(rows, name, L, key):
+    """ZIPs hold every photo, so they're built only when asked for."""
+    if st.button(t('prepare_zip', L), key=f'prep_{key}', disabled=not rows):
+        st.session_state[f'zip_{key}'] = to_zip(rows, L, name)
+    if st.session_state.get(f'zip_{key}'):
+        st.download_button(t('download_zip', L), st.session_state[f'zip_{key}'], f'{name}.zip', 'application/zip',
+                           key=f'dl_{key}')
 
 
 def codes_table(codes, L):
@@ -60,279 +142,347 @@ def show_result(img, out, L):
             st.warning(t('no_code', L))
         if out['plates']:
             st.dataframe(plates_table(out['plates'], L), hide_index=True, use_container_width=True)
-        elif read_plates:
+        else:
             st.info(t('no_plate', L))
         with st.expander(t('all_text', L)):
             st.write(out['texts'])
 
+
+def grab_frame(source):
+    cap = open_capture(int(source) if str(source).isdigit() else source)
+    frame = None
+    for _ in range(5):  # skip stale buffered frames
+        ok, f = cap.read()
+        frame = f if ok else frame
+    cap.release()
+    return frame
+
+
+# ---------- layout ----------
 
 with st.sidebar:
     L = st.radio('🌐', list(LANGUAGES), format_func=LANGUAGES.get, horizontal=True,
                  label_visibility='collapsed')
     st.title('🚛 ' + t('title', L))
     st.caption(t('subtitle', L))
-    max_side = st.select_slider(t('max_side', L), [960, 1280, 1600, 1920, 2560], value=1920,
-                                help=t('max_side_help', L))
-    zoom = st.toggle(t('zoom', L), value=True, help=t('zoom_help', L))
-    vertical = st.toggle(t('vertical', L), value=True, help=t('vertical_help', L))
-    read_plates = st.toggle(t('read_plates', L), value=True)
-    st.markdown(t('legend', L))
 
 if L == 'ar':  # right-to-left layout for Arabic
     st.markdown('<style>[data-testid="stAppViewContainer"], [data-testid="stSidebar"] '
                 '{direction: rtl; text-align: right;}</style>', unsafe_allow_html=True)
 
-recognizer = get_recognizer(max_side)
-opts = dict(zoom=zoom, vertical=vertical, plates=read_plates)
-tab_live, tab_img, tab_vid, tab_cam, tab_log = st.tabs(
-    [t(k, L) for k in ('tab_live', 'tab_image', 'tab_video', 'tab_camera', 'tab_log')])
+store = get_store()
+tab_live, tab_rec, tab_cams, tab_test = st.tabs([t(k, L) for k in ('tab_live', 'tab_records', 'tab_cameras', 'tab_test')])
 
-
-@st.cache_data(max_entries=16)
-def _day_rows(day, stamp):  # stamp = workbook names + modification times, so edits refresh it
-    return read_day('logs', day)
-
-
-def day_rows(day):
-    """Rows logged on `day` ('YYYY-MM-DD'); re-read only when a workbook has changed."""
-    stamp = tuple((p.name, p.stat().st_mtime) for p in sorted(Path('logs').glob('*.xlsx')))
-    return _day_rows(day, stamp)
-
-
-def show_day(rows, day, L, key):
-    """Counts, table (newest first) and an Excel download for one day's trucks."""
-    if not rows:
-        st.info(t('no_rows_day', L, day=day))
-        return
-    dirs = [r['direction'] for r in rows]
-    a, b, c = st.columns(3)
-    a.metric(t('events', L), len(rows))
-    b.metric(t('IN', L), sum(d in (t('IN', x) for x in LANGUAGES) for d in dirs))
-    c.metric(t('OUT', L), sum(d in (t('OUT', x) for x in LANGUAGES) for d in dirs))
-    df = pd.DataFrame(rows[::-1])[[k for k in COLUMNS if k not in LINKS]]
-    st.dataframe(df.rename(columns=lambda k: t(k, L)), hide_index=True, use_container_width=True)
-    st.download_button(t('download_day', L, day=day), export_day(rows, L), f'gate_log_{day}.xlsx',
-                       mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                       type='primary', key=f'dl_{key}_{day}')
-
-
-CONFIG = Path('cameras.json')
-
-
-def load_config():
-    try:
-        return json.loads(CONFIG.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return {}
-
-
-def save_config(nvr, cam, language):
-    """Remember the NVR and this camera in cameras.json (also used by cctv.py) and start it
-    automatically next time the app opens."""
-    cfg = load_config()
-    cfg.update(nvr=nvr, language=language, autostart=True)
-    cfg['cameras'] = [c for c in cfg.get('cameras', []) if c.get('name') != cam['name']] + [cam]
-    CONFIG.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-
-
-@st.cache_resource
-def live_manager():
-    """One camera runner for the whole app process: it survives page reloads and keeps
-    detecting with the browser closed. Saved cameras start automatically."""
-    cfg = load_config()
-    manager = LiveManager(cfg)
-    if cfg.get('autostart'):
-        for cam in cfg.get('cameras', []):
-            try:
-                manager.start(cam)
-            except Exception as e:  # one bad camera entry shouldn't stop the others
-                print(f"[app] could not start {cam.get('name')}: {e}")
-    return manager
-
-
+# ---------- Live ----------
 with tab_live:
-    manager = live_manager()
-    saved = load_config()
-    nvr, cams = saved.get('nvr', {}), saved.get('cameras') or [{}]
-    running = manager.running()
-    with st.expander(t('add_camera', L), expanded=not running):
-        with st.form('start_camera'):
-            a, b, c, d = st.columns([3, 2, 2, 1.4])
-            ip = a.text_input(t('nvr_ip', L), nvr.get('ip', ''), placeholder='192.168.1.64')
-            user = b.text_input(t('nvr_user', L), nvr.get('user', 'admin'))
-            password = c.text_input(t('nvr_password', L), nvr.get('password', ''), type='password')
-            channel = d.number_input(t('nvr_channel', L), 1, 64, int(cams[0].get('channel', 1)))
-            e, f, g = st.columns([2, 1.4, 3])
-            name = e.text_input(t('camera_name', L), cams[0].get('name', 'Gate 1'))
-            direction = f.selectbox(t('direction', L), ['IN', 'OUT'], format_func=lambda x: t(x, L),
-                                    index=['IN', 'OUT'].index(cams[0].get('direction', 'IN')))
-            location = g.text_input(t('location', L), cams[0].get('location', ''))
-            h, k = st.columns(2)
-            langs = list(LANGUAGES)
-            excel_lang = h.selectbox(t('excel_language', L), langs, format_func=LANGUAGES.get,
-                                     index=langs.index(saved.get('language', L)))
-            remember = k.checkbox(t('remember', L), True, help=t('remember_help', L))
-            go = st.form_submit_button(t('start_camera', L), type='primary')
-    if go:
-        nvr = {'ip': ip.strip(), 'user': user.strip(), 'password': password, 'port': nvr.get('port', 554)}
-        cam = {'name': name.strip() or 'Gate 1', 'channel': int(channel), 'direction': direction,
-               'location': location.strip()}
-        if not nvr['ip'] or not password:
-            st.error(t('no_video', L))
-        elif not port_open(nvr['ip'], nvr['port']):
-            st.error(t('unreachable', L, ip=nvr['ip']))
-        else:
-            manager.start(cam, nvr, excel_lang)
-            if remember:
-                save_config(nvr, cam, excel_lang)
-            st.success(t('started', L, name=cam['name']))
-            running = manager.running()
-    if running:
-        st.caption(t('live_hint', L))
-        for cam_name, cam in running.items():
-            a, b = st.columns([6, 1])
-            where = [t(cam.get('direction', 'IN'), L), cam.get('location', '')]
-            if 'channel' in cam:
-                where.append(f"{t('nvr_channel', L)} {cam['channel']}")
-            a.markdown(f"🟢 **{cam_name}** · " + ' · '.join(x for x in where if x))
-            if b.button(t('stop', L), key=f'stop_{cam_name}'):
-                manager.stop(cam_name)
-                st.rerun()
-
     @st.fragment(run_every=2)
     def live_view():
-        frames = sorted(Path('logs/live').glob('*.jpg'))
-        waiting = [n for n in manager.running() if not (Path('logs/live') / f"{_safe(n)}.jpg").exists()]
-        for n in waiting:
-            st.info(t('connecting', L, name=n))
-        if not frames and not waiting:
-            st.info(t('no_live', L))
-        cols = st.columns(min(2, len(frames))) if frames else []
-        for i, p in enumerate(frames):
-            age = int(time.time() - p.stat().st_mtime)
-            with cols[i % len(cols)]:
-                st.image(p.read_bytes(), caption=f"{p.stem.replace('_', ' ')} · {t('updated', L, s=age)}",
-                         use_container_width=True)
-                if age > 30:
-                    st.warning(t('stale', L, s=age))
+        cams_cfg = [c for c in load_config().get('cameras', []) if c.get('enabled', True)]
+        running, status = service_status()
+        if not cams_cfg:
+            st.info(t('no_cameras', L))
+        elif not running:
+            st.error(t('service_down', L))
+            if time.time() - st.session_state.get('started_at', 0) < 30:
+                st.success(t('service_starting', L))
+            elif st.button(t('start_service', L), type='primary'):
+                start_service()
+                st.session_state['started_at'] = time.time()
+                st.success(t('service_starting', L))
+        if cams_cfg:
+            cols = st.columns(min(2, len(cams_cfg)))
+            for i, cam in enumerate(cams_cfg):
+                with cols[i % len(cols)]:
+                    name, s = cam['name'], status.get(cam['name'])
+                    frame = LIVE / f"{_safe(name)}.jpg"
+                    if not running:
+                        st.caption(f"⚪ **{name}** · {t('stopped', L)}")
+                    elif not s:
+                        st.caption(f"⏳ **{name}** · {t('connecting', L, name='')}")
+                    else:
+                        age = int(time.time() - (s.get('last_frame_at') or 0))
+                        if not s.get('last_frame_at') or age > 15:
+                            st.error(f"🔴 **{name}** · {t('offline', L, s=age if s.get('last_frame_at') else '?')}")
+                        else:
+                            st.caption(f"🟢 **{name}** · {t(cam.get('direction', 'IN'), L)} · "
+                                       f"{cam.get('location', '')} · OCR {s.get('last_ocr_ms') or '-'} {t('ms', L)}")
+                    if running and frame.exists():
+                        st.image(frame.read_bytes(), use_container_width=True)
         today = date.today().isoformat()
-        rows = day_rows(today)
+        rows = store.day(today)[::-1]
         st.subheader(t('today_trucks', L, n=len(rows)))
-        show_day(rows, today, L, 'live')
+        counts(rows, L)
+        if rows:
+            st.dataframe(records_table(rows, L), hide_index=True, use_container_width=True)
+            st.download_button(t('download_day', L, day=today), to_excel(rows[::-1], L), f'gate_log_{today}.xlsx',
+                               XLSX, type='primary', key='dl_live_day')
+            st.caption(t('review_hint', L))
 
     live_view()
 
-with tab_img:
-    files = st.file_uploader(t('upload_images', L), type=['jpg', 'jpeg', 'png', 'bmp', 'webp'],
-                             accept_multiple_files=True)
-    samples = sorted(str(p) for p in Path('images').iterdir()
-                     if p.suffix.lower() in ('.png', '.jpg', '.jpeg')) + ['demo_input.jpg']
-    default = next((s for s in samples if 'ksa_' in s), 'demo_input.jpg')
-    sample = None if files else st.selectbox(t('try_sample', L), samples, index=samples.index(default))
-    images = [(f.name, cv2.imdecode(np.frombuffer(f.read(), np.uint8), cv2.IMREAD_COLOR)) for f in files] \
-        if files else [(sample, cv2.imread(sample))]
-    for name, img in images:
-        st.subheader(name)
-        if img is None:
-            st.error(t('bad_image', L))
-            continue
-        show_result(img, recognizer(img, **opts), L)
-
-with tab_vid:
-    st.caption(t('video_caption', L))
-    video = st.file_uploader(t('upload_video', L), type=['mp4', 'avi', 'mov', 'mkv'])
-    c1, c2, c3, c4 = st.columns(4)
-    fps = c1.slider(t('fps', L), 0.5, 5.0, 2.0, 0.5)
-    min_hits = c2.slider(t('min_hits', L), 1, 5, 2)
-    direction = c3.selectbox(t('direction', L), ['IN', 'OUT'], format_func=lambda d: t(d, L))
-    location = c4.text_input(t('location', L), t('demo_gate', L))
-    if video and st.button(t('process_video', L), type='primary'):
-        work = Path(tempfile.mkdtemp())
-        src = work / video.name
-        src.write_bytes(video.read())
-        cap = cv2.VideoCapture(str(src))
-        vfps = cap.get(cv2.CAP_PROP_FPS) or 25
-        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 1
-        step = max(1, round(vfps / fps))
-        tracker = GateTracker(min_hits=min_hits)
-        log = ExcelLog(str(work / 'gate_log.xlsx'), work / 'snapshots', L)
-        bar, preview, rows, n, t0 = st.progress(0.0), st.empty(), [], 0, time.time()
-
-        def add(events):
-            for e in events:
-                rows.append(log.log(e, 'Video demo', location, direction))
-
-        while True:
-            ok, frame = cap.read()
-            if not ok:
-                break
-            n += 1
-            if n % step:
-                continue
-            out = recognizer(frame, **opts)
-            add(tracker.update(out['codes'], frame, n / vfps, out['plates']))
-            preview.image(rgb(draw(frame, out['codes'], out['plates'])), caption=f"{n / vfps:.1f} s",
-                          use_container_width=True)
-            bar.progress(min(1.0, n / total))
-        add(tracker.flush(n / vfps))
-        bar.progress(1.0, text=t('done', L, s=f'{time.time() - t0:.0f}', n=len(rows)))
-        if rows:
-            df = pd.DataFrame(rows)[[c for c in COLUMNS if c not in LINKS]]
-            st.dataframe(df.rename(columns=lambda c: t(c, L)), hide_index=True, use_container_width=True)
-            cols = st.columns(min(4, len(rows)))
-            for i, row in enumerate(rows):
-                cols[i % len(cols)].image(row['snapshot'], caption=' · '.join(
-                    x for x in (row['plate'], row['container']) if x))
-            xlsx = next(work.glob('*.xlsx'))
-            st.download_button(t('download_excel', L), xlsx.read_bytes(), 'gate_log.xlsx')
+# ---------- Records ----------
+with tab_rec:
+    @st.fragment(run_every=15)  # tabs are not redrawn when opened, so refresh new trucks
+    def records_view():
+        a, b = st.columns([1, 2])
+        day = a.date_input(t('pick_day', L), value=date.today(), format='YYYY-MM-DD').isoformat()
+        only_review = b.toggle(t('needs_review_only', L))
+        rows = store.day(day)
+        counts(rows, L)
+        shown = [r for r in rows if not only_review or needs_review(r)]  # oldest first: rows keep their place
+        if not shown:
+            st.info(t('no_rows_day', L, day=day))
         else:
-            st.info(t('no_truck', L))
+            event = st.dataframe(records_table(shown, L), hide_index=True, use_container_width=True,
+                                 on_select='rerun', selection_mode='single-row', key=f'tbl_{day}_{only_review}')
+            picked = event.selection.rows
+            if not picked:
+                st.caption(t('click_row', L))
+            else:
+                row = shown[picked[0]]
+                st.subheader(f"{row['time']} · {display(row, L)['direction']} · {row.get('camera') or ''}")
+                left, right = st.columns([3, 2])
+                with left:
+                    if row.get('snapshot') and Path(row['snapshot']).is_file():
+                        st.image(row['snapshot'], caption=t('snapshot', L), use_container_width=True)
+                    else:
+                        st.warning(t('photo_missing', L))
+                with right:
+                    if row.get('plate_image') and Path(row['plate_image']).is_file():
+                        st.image(row['plate_image'], caption=t('plate_image', L), use_container_width=True)
+                    d = display(row, L)
+                    st.markdown(f"**{t('plate', L)}:** {d['plate'] or '—'}  \n**{t('plate_ar', L)}:** {d['plate_ar'] or '—'}"
+                                f"  \n**{t('plate_check', L)}:** {d['plate_check'] or '—'}"
+                                f"  \n**{t('container', L)}:** {d['container'] or '—'}"
+                                f"  \n**{t('check_digit', L)}:** {d['check_digit'] or '—'}")
+                    with st.form(f"fix_{row['id']}"):
+                        st.markdown(f"**{t('fix_reading', L)}**")
+                        new_plate = st.text_input(t('plate', L), row.get('plate') or '', placeholder='3231 UTA')
+                        new_code = st.text_input(t('container', L), row.get('container') or '', placeholder='MRSU 786939 5')
+                        new_dir = st.selectbox(t('direction', L), ['IN', 'OUT'], format_func=lambda x: t(x, L),
+                                               index=['IN', 'OUT'].index(row.get('direction') or 'IN'))
+                        if st.form_submit_button(t('save_fix', L), type='primary'):
+                            fix, errors = {'direction': new_dir}, []
+                            if new_plate.strip():
+                                p = parse_latin(new_plate)
+                                if p:
+                                    fix.update(plate=format_plate(*p), plate_ar=to_arabic(*p), plate_verified=1)
+                                else:
+                                    errors.append(t('bad_plate', L))
+                            else:
+                                fix.update(plate=None, plate_ar=None, plate_verified=None)
+                            if new_code.strip():
+                                c = normalize(new_code)
+                                if len(c) == 11 and c[:4].isalpha() and c[4:].isdigit():
+                                    fix.update(container=format_code(c), check_digit_ok=int(check_digit(c[:10]) == int(c[10])))
+                                    if not fix['check_digit_ok']:
+                                        st.warning(t('check_digit_wrong', L))
+                                else:
+                                    errors.append(t('bad_container', L))
+                            else:
+                                fix.update(container=None, check_digit_ok=None, size_type=None)
+                            if errors:
+                                for e in errors:
+                                    st.error(e)
+                            else:
+                                store.correct(row['id'], **fix)
+                                gl = GateLog(store, DEFAULTS['snapshots'], ROOT / DEFAULTS['excel_dir'],
+                                             load_config().get('language', 'en'))
+                                gl.changed(day)
+                                gl.flush()
+                                with open(ROOT / 'logs' / 'corrections.jsonl', 'a', encoding='utf-8') as f:
+                                    f.write(json.dumps({'id': row['id'], 'before': {k: row.get(k) for k in fix},
+                                                        'after': fix, 'snapshot': row.get('snapshot')},
+                                                       ensure_ascii=False) + '\n')
+                                st.success(t('fix_saved', L))
+                                st.rerun()
+        st.divider()
+        month = day[:7]
+        a, b, c = st.columns(3)
+        with a:
+            st.download_button(t('download_day', L, day=day), to_excel(rows, L), f'gate_log_{day}.xlsx', XLSX,
+                               type='primary', disabled=not rows, key='dl_rec_day')
+        with b:
+            zip_button(rows, f'gate_log_{day}', L, f'zip_{day}')
+        with c:
+            month_rows = store.month(month)
+            st.download_button(t('download_month', L, month=month), to_excel(month_rows, L), f'gate_log_{month}.xlsx',
+                               XLSX, disabled=not month_rows, key='dl_rec_month')
 
-with tab_cam:
-    st.caption(t('camera_caption', L))
-    mode = st.radio(t('conn_mode', L), ['nvr', 'url'], horizontal=True,
-                    format_func=lambda m: t(f'{m}_mode', L))
-    if mode == 'nvr':
-        a, b, c, d = st.columns([3, 2, 2, 1])
-        ip = a.text_input(t('nvr_ip', L), placeholder='192.168.1.64')
-        user = b.text_input(t('nvr_user', L), 'admin')
-        password = c.text_input(t('nvr_password', L), type='password')
-        channel = d.number_input(t('nvr_channel', L), 1, 64, 1)
-        source = hikvision_url(ip.strip(), user, password, channel) if ip and password else ''
+    records_view()
+
+# ---------- Cameras ----------
+with tab_cams:
+    cfg = load_config()
+    nvr = cfg.get('nvr', {})
+    st.subheader(t('nvr_settings', L))
+    with st.form('nvr'):
+        a, b, c, d = st.columns([3, 2, 2, 1.4])
+        ip = a.text_input(t('nvr_ip', L), nvr.get('ip', ''), placeholder='192.168.1.64')
+        user = b.text_input(t('nvr_user', L), nvr.get('user', 'admin'))
+        password = c.text_input(t('nvr_password', L), nvr.get('password', ''), type='password')
+        port = d.number_input(t('port', L), 1, 65535, int(nvr.get('port', 554)))
+        langs = list(LANGUAGES)
+        excel_lang = st.selectbox(t('excel_language', L), langs, format_func=LANGUAGES.get,
+                                  index=langs.index(cfg.get('language', 'en')))
+        if st.form_submit_button(t('save', L), type='primary'):
+            if ip.strip() and not port_open(ip.strip(), port):
+                st.error(t('unreachable', L, ip=ip))
+            else:
+                cfg.update(nvr={'ip': ip.strip(), 'user': user.strip(), 'password': password, 'port': int(port)},
+                           language=excel_lang)
+                save_config(cfg)
+                st.success(t('saved', L))
+    st.caption(t('password_note', L))
+
+    st.subheader(t('cameras', L))
+    cams = cfg.get('cameras', [])
+    for i, cam in enumerate(cams):
+        a, b, c = st.columns([5, 1.3, 1])
+        area = f" · {t('roi_short', L)} {', '.join(f'{v:.0%}' for v in cam['roi'])}" if cam.get('roi') else ''
+        a.markdown(f"**{cam['name']}** · {t('nvr_channel', L)} {cam.get('channel', '-')} · "
+                   f"{t(cam.get('direction', 'IN'), L)} · {cam.get('location', '')}{area}")
+        on = b.toggle(t('enabled', L), cam.get('enabled', True), key=f"en_{cam['name']}")
+        if on != cam.get('enabled', True):
+            cam['enabled'] = on
+            save_config(cfg)
+            st.rerun()
+        if c.button('🗑', key=f"del_{cam['name']}", help=t('delete', L)):
+            cfg['cameras'] = [x for x in cams if x['name'] != cam['name']]
+            save_config(cfg)
+            st.rerun()
+    with st.expander(t('add_camera', L), expanded=not cams):
+        with st.form('add_cam'):
+            e, f, g, h = st.columns([2, 1, 1.4, 3])
+            name = e.text_input(t('camera_name', L), 'Gate 1 Entry')
+            channel = f.number_input(t('nvr_channel', L), 1, 64, 1)
+            direction = g.selectbox(t('direction', L), ['IN', 'OUT'], format_func=lambda x: t(x, L))
+            location = h.text_input(t('location', L), '')
+            st.caption(t('roi_help', L))
+            r1, r2 = st.columns(2)
+            lr = r1.slider(t('roi_x', L), 0, 100, (0, 100), 5)
+            tb = r2.slider(t('roi_y', L), 0, 100, (0, 100), 5)
+            if st.form_submit_button(t('save_camera', L), type='primary'):
+                cam = {'name': name.strip() or 'Gate 1', 'channel': int(channel), 'direction': direction,
+                       'location': location.strip(), 'enabled': True}
+                if (lr, tb) != ((0, 100), (0, 100)):
+                    cam['roi'] = [lr[0] / 100, tb[0] / 100, lr[1] / 100, tb[1] / 100]
+                cfg['cameras'] = [x for x in cams if x['name'] != cam['name']] + [cam]
+                cfg.setdefault('autostart', True)
+                save_config(cfg)
+                st.success(t('camera_saved', L, name=cam['name']))
+                st.rerun()
+
+    if cams and nvr.get('ip'):
+        st.subheader(t('test_camera', L))
+        a, b = st.columns([3, 1])
+        which = a.selectbox(t('camera_name', L), [c['name'] for c in cams], label_visibility='collapsed')
+        if b.button(t('grab_frame', L)):
+            cam = next(c for c in cams if c['name'] == which)
+            if not port_open(nvr['ip'], nvr.get('port', 554)):
+                st.error(t('unreachable', L, ip=nvr['ip']))
+            else:
+                frame = grab_frame(hikvision_url(nvr['ip'], nvr['user'], nvr['password'], cam['channel'],
+                                                 port=nvr.get('port', 554)))
+                if frame is None:
+                    st.error(t('no_video', L))
+                else:
+                    st.success(t('camera_ok', L, w=frame.shape[1], h=frame.shape[0]))
+                    if cam.get('roi'):  # read only the camera's reading area, like the service does
+                        H, W = frame.shape[:2]
+                        x0, y0, x1, y1 = cam['roi']
+                        frame = frame[int(y0 * H):int(y1 * H), int(x0 * W):int(x1 * W)]
+                    show_result(frame, get_recognizer(1920)(frame), L)
+
+# ---------- Test ----------
+with tab_test:
+    with st.expander(t('ocr_settings', L)):
+        a, b, c, d = st.columns(4)
+        max_side = a.select_slider(t('max_side', L), [960, 1280, 1600, 1920, 2560], value=1920,
+                                   help=t('max_side_help', L))
+        zoom = b.toggle(t('zoom', L), value=True, help=t('zoom_help', L))
+        vertical = c.toggle(t('vertical', L), value=True, help=t('vertical_help', L))
+        read_plates = d.toggle(t('read_plates', L), value=True)
+        st.markdown(t('legend', L))
+    recognizer = get_recognizer(max_side)
+    opts = dict(zoom=zoom, vertical=vertical, plates=read_plates)
+    mode = st.radio(t('test_mode', L), ['image', 'video', 'stream'], horizontal=True,
+                    format_func=lambda m: t(f'test_{m}', L))
+
+    if mode == 'image':
+        files = st.file_uploader(t('upload_images', L), type=['jpg', 'jpeg', 'png', 'bmp', 'webp'],
+                                 accept_multiple_files=True)
+        samples = sorted(str(p.relative_to(ROOT)) for p in (ROOT / 'images').iterdir()
+                         if p.suffix.lower() in ('.png', '.jpg', '.jpeg')) + ['demo_input.jpg']
+        default = next((s for s in samples if 'ksa_' in s), 'demo_input.jpg')
+        sample = None if files else st.selectbox(t('try_sample', L), samples, index=samples.index(default))
+        images = [(f.name, cv2.imdecode(np.frombuffer(f.read(), np.uint8), cv2.IMREAD_COLOR)) for f in files] \
+            if files else [(sample, cv2.imread(str(ROOT / sample)))]
+        for name, img in images:
+            st.subheader(name)
+            if img is None:
+                st.error(t('bad_image', L))
+                continue
+            show_result(img, recognizer(img, **opts), L)
+
+    elif mode == 'video':
+        st.caption(t('video_caption', L))
+        video = st.file_uploader(t('upload_video', L), type=['mp4', 'avi', 'mov', 'mkv'])
+        a, b, c, d = st.columns(4)
+        fps = a.slider(t('fps', L), 0.5, 5.0, 2.0, 0.5)
+        min_hits = b.slider(t('min_hits', L), 1, 5, 2)
+        direction = c.selectbox(t('direction', L), ['IN', 'OUT'], format_func=lambda x: t(x, L))
+        location = d.text_input(t('location', L), t('demo_gate', L))
+        if video and st.button(t('process_video', L), type='primary'):
+            work = Path(tempfile.mkdtemp())
+            src = work / video.name
+            src.write_bytes(video.read())
+            cap = cv2.VideoCapture(str(src))
+            vfps = cap.get(cv2.CAP_PROP_FPS) or 25
+            total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 1
+            step = max(1, round(vfps / fps))
+            tracker = GateTracker(min_hits=min_hits)
+            log = GateLog(Store(str(work / 'gate.db')), work / 'snapshots', work / 'excel', L)
+            bar, preview, rows, n, t0 = st.progress(0.0), st.empty(), [], 0, time.time()
+
+            def add(events):
+                for e in events:
+                    r = log.log(e, 'Video demo', location, direction)
+                    if r['status'] == 'added':
+                        rows.append(r['id'])
+
+            while True:
+                ok, frame = cap.read()
+                if not ok:
+                    break
+                n += 1
+                if n % step:
+                    continue
+                out = recognizer(frame, **opts)
+                add(tracker.update(out['codes'], frame, n / vfps, out['plates']))
+                preview.image(rgb(draw(frame, out['codes'], out['plates'])), caption=f"{n / vfps:.1f} s",
+                              use_container_width=True)
+                bar.progress(min(1.0, n / total))
+            add(tracker.flush(n / vfps))
+            found = [log.store.get(i) for i in rows]
+            bar.progress(1.0, text=t('done', L, s=f'{time.time() - t0:.0f}', n=len(found)))
+            if found:
+                st.dataframe(records_table(found, L), hide_index=True, use_container_width=True)
+                cols = st.columns(min(4, len(found)))
+                for i, r in enumerate(found):
+                    cols[i % len(cols)].image(r['snapshot'], caption=' · '.join(x for x in (r['plate'], r['container']) if x))
+                st.download_button(t('download_excel', L), to_excel(found, L), 'gate_log.xlsx', XLSX)
+            else:
+                st.info(t('no_truck', L))
+
     else:
+        st.caption(t('camera_caption', L))
         source = st.text_input(t('camera_source', L),
                                placeholder='rtsp://user:password@192.168.1.64:554/Streaming/Channels/101')
-    if source and st.button(t('grab_frame', L)):
-        if mode == 'nvr' and not port_open(ip.strip(), 554):
-            st.error(t('unreachable', L, ip=ip))
-            st.stop()
-        cap = open_capture(int(source) if source.isdigit() else source)
-        frame = None
-        for _ in range(5):  # skip stale buffered frames
-            ok, f = cap.read()
-            frame = f if ok else frame
-        cap.release()
-        if frame is None:
-            st.error(t('no_video' if mode == 'nvr' else 'camera_error', L))
-        else:
-            st.success(t('camera_ok', L, w=frame.shape[1], h=frame.shape[0]))
-            show_result(frame, recognizer(frame, **opts), L)
-
-with tab_log:
-    # Always show the day picker: the app is usually opened before the first truck arrives,
-    # and picking a day (or reopening the tab) re-reads the workbooks.
-    day = st.date_input(t('pick_day', L), value=date.today(), format='YYYY-MM-DD').isoformat()
-    show_day(day_rows(day), day, L, 'log')
-    snaps = sorted((p for p in (Path('logs/snapshots') / day).glob('*.jpg') if not p.stem.endswith('_plate')),
-                   key=lambda p: p.stat().st_mtime, reverse=True)[:8]
-    if snaps:
-        st.subheader(t('latest_snapshots', L))
-        cols = st.columns(4)
-        for i, p in enumerate(snaps):
-            cols[i % 4].image(str(p), caption=p.stem.replace('_', ' '))
-    logs = sorted(Path('logs').glob('*.xlsx'), reverse=True)
-    if logs:
-        with st.expander(t('month_workbooks', L)):
-            for p in logs:
-                st.download_button(f'⬇ {p.name}', p.read_bytes(), p.name, key=f'dl_month_{p.name}',
-                                   mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        if source and st.button(t('grab_frame', L)):
+            frame = grab_frame(source)
+            if frame is None:
+                st.error(t('camera_error', L))
+            else:
+                st.success(t('camera_ok', L, w=frame.shape[1], h=frame.shape[0]))
+                show_result(frame, recognizer(frame, **opts), L)

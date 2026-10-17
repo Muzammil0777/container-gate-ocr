@@ -10,8 +10,9 @@ LATIN_TO_ARABIC = {'A': 'ا', 'B': 'ب', 'J': 'ح', 'D': 'د', 'R': 'ر', 'S': '
                    'V': 'ى'}
 ARABIC_DIGITS = '٠١٢٣٤٥٦٧٨٩'
 # Look-alikes the OCR produces, mapped to what can actually be on a plate
-LETTER_FIX = {'O': 'D', 'Q': 'G', 'C': 'G', '0': 'D', '8': 'B', '5': 'S', '2': 'Z', '7': 'T',
-              '6': 'G', '4': 'A', 'Y': 'V', 'F': 'E'}
+# Only letter-for-letter fixes: turning digits into letters ('5' -> 'S') builds fake plates out
+# of container numbers ('69395' + 'SU' -> '6939 SSU'); several reads of a real plate fix that instead.
+LETTER_FIX = {'O': 'D', 'Q': 'G', 'C': 'G', 'Y': 'V', 'F': 'E'}
 DIGIT_FIX = {'O': '0', 'D': '0', 'Q': '0', 'I': '1', 'L': '1', 'S': '5', 'B': '8', 'Z': '2',
              'G': '6', 'T': '7', 'A': '4'}
 # Arabic model confusions on plate letters: alef/1, waw/9, heh/5, ain/4

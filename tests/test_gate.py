@@ -1,7 +1,12 @@
 import numpy as np
+import io
+import zipfile
+from datetime import datetime, timedelta
+
 from openpyxl import load_workbook
 
-from src.gate import ExcelLog, GateTracker
+from src.gate import GateLog, GateTracker
+from src.store import Store, needs_review, to_excel, to_zip
 
 FRAME = np.zeros((100, 200, 3), np.uint8)
 
@@ -72,87 +77,88 @@ def event(c=None, p=None):
     return {'code': c, 'plate': p, 'frame': FRAME, 'plate_frame': FRAME if p else None}
 
 
-def test_excel_log_english(tmp_path):
-    log = ExcelLog(str(tmp_path / 'gate_%Y.xlsx'), tmp_path / 'snaps')
-    log.log(event(code('TRLU6689574'), plate()), camera='Gate 1', location='North', direction='IN')
-    log.log(event(code('TCNU6345807')), camera='Gate 1', location='North', direction='OUT')
-    rows = list(load_workbook(next(tmp_path.glob('gate_*.xlsx'))).active.values)
-    assert rows[0][:7] == ('Date', 'Time', 'Direction', 'Plate', 'Plate (Arabic)', 'Plate Check', 'Container Code')
-    assert rows[1][2:9] == ('IN', '3231 UTA', 'و ط ا ٣٢٣١', 'Arabic + Latin match', 'TRLU 668957 4', 'YES', '45G1')
-    assert rows[1][12:] == ('open image', 'open image')
-    assert rows[2][2:4] == ('OUT', None) and rows[2][13] is None   # no plate on this truck
-    assert len(list((tmp_path / 'snaps').rglob('*.jpg'))) == 3      # 2 snapshots + 1 plate crop
+T0 = datetime(2026, 10, 15, 9, 0, 0)
 
 
-def test_excel_log_arabic_and_column_mismatch(tmp_path):
-    path = str(tmp_path / 'gate.xlsx')
-    ExcelLog(path, tmp_path / 's').log(event(code('TRLU6689574')), direction='IN')       # English file
-    ExcelLog(path, tmp_path / 's', language='ar').log(event(None, plate()), direction='IN')
-    ar = load_workbook(tmp_path / 'gate_2.xlsx').active                                  # new file, not mixed
-    rows = list(ar.values)
-    assert ar.sheet_view.rightToLeft and rows[0][:3] == ('التاريخ', 'الوقت', 'الاتجاه')
-    assert rows[1][2:6] == ('دخول', '3231 UTA', 'و ط ا ٣٢٣١', 'مطابق عربي ولاتيني')
-    assert len(list(load_workbook(path).active.values)) == 2                             # English untouched
+def gate(tmp_path, **kw):
+    return GateLog(Store(str(tmp_path / 'gate.db')), tmp_path / 'snaps', tmp_path / 'excel', **kw)
 
 
-def test_excel_locked_rows_are_queued_not_lost(tmp_path, monkeypatch):
-    import openpyxl.workbook.workbook as wbmod
-    log = ExcelLog(str(tmp_path / 'gate.xlsx'), tmp_path / 'snaps')
-    real_save = wbmod.Workbook.save
-    monkeypatch.setattr(wbmod.Workbook, 'save', lambda *a: (_ for _ in ()).throw(PermissionError))
-    log.log(event(code('TRLU6689574')))
-    assert len(log.pending) == 1
-    monkeypatch.setattr(wbmod.Workbook, 'save', real_save)
-    log.log(event(code('TCNU6345807')))
-    assert log.pending == [] and len(list(load_workbook(tmp_path / 'gate.xlsx').active.values)) == 3
-
-
-def test_excel_dedupe_and_merge(tmp_path):
-    from datetime import datetime, timedelta
-    path, t0 = str(tmp_path / 'gate.xlsx'), datetime(2026, 10, 15, 9, 0, 0)
-    log = ExcelLog(path, tmp_path / 's', dedupe_s=300)
-    first = log.log(event(code('MRSU4425761')), direction='IN', when=t0)                       # container only
-    merged = log.log(event(code('MRSU4425761'), plate()), direction='IN', when=t0 + timedelta(seconds=40))
-    dup = log.log(event(None, plate()), direction='IN', when=t0 + timedelta(seconds=90))        # same truck again
-    out = log.log(event(code('MRSU4425761'), plate()), direction='OUT', when=t0 + timedelta(seconds=120))
-    later = log.log(event(code('MRSU4425761'), plate()), direction='IN', when=t0 + timedelta(minutes=30))
-    # restart: a new ExcelLog still sees the workbook's recent rows
-    again = ExcelLog(path, tmp_path / 's').log(event(code('MRSU4425761')), direction='IN',
-                                               when=t0 + timedelta(minutes=31))
-    assert [r['status'] for r in (first, merged, dup, out, later, again)] == \
-        ['added', 'merged', 'duplicate', 'added', 'added', 'duplicate']
-    rows = list(load_workbook(path).active.values)[1:]
-    assert [(r[2], r[3], r[6]) for r in rows] == [('IN', '3231 UTA', 'MRSU 442576 1'), ('OUT', '3231 UTA', 'MRSU 442576 1'),
-                                                  ('IN', '3231 UTA', 'MRSU 442576 1')]
-    assert rows[0][13] == 'open image'                                  # plate image link filled in by the merge
-    snaps = [p.name for p in (tmp_path / 's').rglob('*.jpg')]
-    assert len(snaps) == 3 + 1 + 2                                      # 3 row snapshots + merged plate + 2 plate images
+def test_rows_dedupe_merge_and_restart(tmp_path):
+    log = gate(tmp_path)
+    s = lambda sec: T0 + timedelta(seconds=sec)  # noqa: E731
+    first = log.log(event(code('MRSU4425761')), direction='IN', when=s(0))                  # container only
+    merged = log.log(event(code('MRSU4425761'), plate()), direction='IN', when=s(40))        # adds the plate
+    dup = log.log(event(None, plate()), direction='IN', when=s(90))                          # same truck again
+    out = log.log(event(code('MRSU4425761'), plate()), direction='OUT', when=s(120))         # leaving: new row
+    later = log.log(event(code('MRSU4425761'), plate()), direction='IN', when=s(1800))       # back later: new row
+    again = gate(tmp_path).log(event(code('MRSU4425761')), direction='IN', when=s(1860))     # after a restart
+    assert [r['status'] for r in (first, merged, dup, out, later, again)] ==         ['added', 'merged', 'duplicate', 'added', 'added', 'duplicate']
+    rows = log.store.day('2026-10-15')
+    assert [(r['direction'], r['plate'], r['container']) for r in rows] ==         [('IN', '3231 UTA', 'MRSU 442576 1'), ('OUT', '3231 UTA', 'MRSU 442576 1'), ('IN', '3231 UTA', 'MRSU 442576 1')]
+    assert rows[0]['plate_image'] and rows[0]['plate_verified'] == 1     # filled in by the merge
+    # 3 rows x (snapshot + plate image); unused photos of merged/duplicate reads are deleted
+    assert len(list((tmp_path / 'snaps').rglob('*.jpg'))) == 6
 
 
 def test_unverified_container_upgraded_by_valid_read(tmp_path):
-    from datetime import datetime, timedelta
-    path, t0 = str(tmp_path / 'gate.xlsx'), datetime(2026, 10, 15, 9, 0, 0)
-    log = ExcelLog(path, tmp_path / 's')
-    log.log(event(code('MRSU442576?', valid=False), plate()), direction='IN', when=t0)
-    r = log.log(event(code('MRSU4425761')), direction='IN', when=t0 + timedelta(seconds=30))
-    rows = list(load_workbook(path).active.values)[1:]
-    assert r['status'] == 'merged' and [(x[6], x[7]) for x in rows] == [('MRSU 442576 1', 'YES')]
+    log = gate(tmp_path)
+    log.log(event(code('MRSU442576?', valid=False), plate()), direction='IN', when=T0)
+    r = log.log(event(code('MRSU4425761')), direction='IN', when=T0 + timedelta(seconds=30))
+    rows = log.store.day('2026-10-15')
+    assert r['status'] == 'merged' and [(x['container'], x['check_digit_ok']) for x in rows] == [('MRSU 442576 1', 1)]
 
 
-def test_read_and_export_one_day(tmp_path):
-    import io
-    from datetime import datetime
-    from src.gate import export_day, read_day
-    log = ExcelLog(str(tmp_path / 'logs' / 'gate_%Y-%m.xlsx'), tmp_path / 's')
-    log.log(event(code('TRLU6689574'), plate()), direction='IN', when=datetime(2026, 10, 14, 23, 59, 0))
-    log.log(event(code('MRSU4425761'), plate('5489', 'EXA')), direction='IN', when=datetime(2026, 10, 15, 8, 0, 0))
-    log.log(event(None, plate('5188', 'VDA')), direction='OUT', when=datetime(2026, 10, 15, 9, 30, 0))
-    rows = read_day(tmp_path / 'logs', '2026-10-15')
-    assert [(r['time'], r['plate'], r['container']) for r in rows] == \
-        [('08:00:00', '5489 EXA', 'MRSU 442576 1'), ('09:30:00', '5188 VDA', None)]
-    assert rows[0]['snapshot'].endswith('.jpg')                       # link target kept
-    wb = load_workbook(io.BytesIO(export_day(rows, 'ar')))
-    out = list(wb.active.values)
-    assert out[0][0] == 'التاريخ' and len(out) == 3 and out[1][3] == '5489 EXA'
-    assert wb.active.cell(row=2, column=13).hyperlink.target == rows[0]['snapshot']
-    assert read_day(tmp_path / 'logs', '2026-10-16') == []
+def test_excel_files_per_day_and_month(tmp_path):
+    log = gate(tmp_path, language='ar')
+    log.log(event(code('TRLU6689574'), plate()), direction='IN', when=datetime(2026, 10, 14, 23, 59))
+    log.log(event(None, plate('5188', 'VDA')), direction='OUT', when=datetime(2026, 10, 15, 8, 0))
+    assert log.flush() == set()
+    day = load_workbook(tmp_path / 'excel' / 'gate_log_2026-10-15.xlsx').active
+    month = list(load_workbook(tmp_path / 'excel' / 'gate_log_2026-10.xlsx').active.values)
+    assert day.sheet_view.rightToLeft and list(day.values)[0][:3] == ('التاريخ', 'الوقت', 'الاتجاه')
+    assert list(day.values)[1][2:4] == ('خروج', '5188 VDA') and len(list(day.values)) == 2
+    assert [r[0] for r in month[1:]] == ['2026-10-14', '2026-10-15']
+
+
+def test_excel_open_in_excel_is_retried_not_lost(tmp_path, monkeypatch):
+    from pathlib import Path
+    log = gate(tmp_path)
+    log.log(event(code('TRLU6689574')), direction='IN', when=T0)
+    real = Path.replace
+    monkeypatch.setattr(Path, 'replace', lambda *a: (_ for _ in ()).throw(PermissionError))
+    assert log.flush() == {'2026-10-15'}
+    monkeypatch.setattr(Path, 'replace', real)
+    assert log.flush() == set() and (tmp_path / 'excel' / 'gate_log_2026-10-15.xlsx').exists()
+    assert len(log.store.day('2026-10-15')) == 1                          # data was never at risk
+
+
+def test_correction_review_and_exports(tmp_path):
+    log = gate(tmp_path)
+    r = log.log(event(code('MRSU442576?', valid=False), plate(verified=False)), direction='IN', when=T0)
+    row = log.store.get(r['id'])
+    assert needs_review(row)
+    log.store.correct(r['id'], container='MRSU 442576 1', check_digit_ok=1, plate_verified=1)
+    row = log.store.get(r['id'])
+    assert row['corrected'] == 1 and row['container'] == 'MRSU 442576 1' and not needs_review(row)
+    xlsx = load_workbook(io.BytesIO(to_excel([row], 'en'))).active
+    assert list(xlsx.values)[1][6:8] == ('MRSU 442576 1', 'YES')
+    z = zipfile.ZipFile(io.BytesIO(to_zip([row], 'en', 'gate_log_2026-10-15')))
+    names = sorted(z.namelist())
+    assert names[0] == 'gate_log_2026-10-15.xlsx' and len(names) == 3 and all(n.startswith('photos/') for n in names[1:])
+    link = load_workbook(io.BytesIO(z.read(names[0]))).active.cell(row=2, column=13).hyperlink.target
+    assert link.startswith('photos/') and link in names                   # works after unzipping anywhere
+
+
+def test_misreads_of_one_truck_combine_into_the_right_reading():
+    # real reads of the MAERSK truck in the site footage (clip b, 57-59 s)
+    t = GateTracker(min_hits=2, max_wait_s=100)
+    reads = [code('IRSU1861395', valid=False), code('MRSU786395?', valid=False),
+             code('MRSU7868395', valid=False), code('MRSU7860395', valid=False)]
+    events = []
+    for i, c in enumerate(reads):
+        events += t.update([c], FRAME, i, [plate('231' if i == 0 else '3231', 'UTA', verified=False)])
+    assert len(events) == 1
+    e = events[0]
+    assert (e['code']['code'], e['code']['valid']) == ('MRSU7869395', True)     # MRSU 786939 5
+    assert e['plate']['plate'] == '3231 UTA'                                   # not the cut-off '231 UTA'
