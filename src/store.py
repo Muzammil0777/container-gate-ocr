@@ -12,6 +12,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Font
 
 from src.i18n import t
+from src.iso6346 import check_digit, format_code, normalize
+from src.saudi_plate import format_plate, parse_latin, to_arabic
 
 FIELDS = ['date', 'time', 'direction', 'plate', 'plate_ar', 'plate_verified', 'container',
           'check_digit_ok', 'size_type', 'camera', 'location', 'confidence', 'snapshot',
@@ -108,6 +110,30 @@ class Store:
 
     def months(self):
         return [r[0] for r in self.db.execute("SELECT DISTINCT substr(date, 1, 7) FROM trucks ORDER BY 1 DESC")]
+
+
+def parse_fix(plate, container, direction):
+    """A person's typed correction -> (fields for Store.correct, error text keys). Empty text
+    clears that reading. A container whose check digit doesn't match is still accepted
+    (fields['check_digit_ok'] == 0), the caller should warn."""
+    fix, errors = {'direction': direction}, []
+    if plate.strip():
+        p = parse_latin(plate)
+        if p:
+            fix.update(plate=format_plate(*p), plate_ar=to_arabic(*p), plate_verified=1)
+        else:
+            errors.append('bad_plate')
+    else:
+        fix.update(plate=None, plate_ar=None, plate_verified=None)
+    if container.strip():
+        c = normalize(container)
+        if len(c) == 11 and c[:4].isalpha() and c[4:].isdigit():
+            fix.update(container=format_code(c), check_digit_ok=int(check_digit(c[:10]) == int(c[10])))
+        else:
+            errors.append('bad_container')
+    else:
+        fix.update(container=None, check_digit_ok=None, size_type=None)
+    return fix, errors
 
 
 def needs_review(row):

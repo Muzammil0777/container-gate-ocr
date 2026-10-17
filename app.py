@@ -4,10 +4,6 @@ Live (cameras + today's trucks), Records (review, fix, download), Cameras (setup
 Detection itself runs in the gate service (cctv.py), which this app starts if needed and
 configures through cameras.json; records come from the database the service writes.
 """
-import json
-import os
-import subprocess
-import sys
 import tempfile
 import time
 from datetime import date
@@ -16,13 +12,13 @@ from pathlib import Path
 # Must be imported before pandas: on Windows, pandas/pyarrow loads an older MSVC runtime DLL
 # that makes onnxruntime fail with "DLL load failed while importing onnxruntime_pybind11_state".
 from src.recognizer import Recognizer, draw  # noqa: I001
-from src.camera import hikvision_url, open_capture, port_open
+from src.camera import hikvision_url, port_open
 from cctv import DEFAULTS, _safe
+from src.config import LIVE, ROOT, grab_frame, load_config, save_config, save_fix, service_status, start_service
 from src.gate import GateLog, GateTracker
 from src.i18n import LANGUAGES, t
-from src.iso6346 import check_digit, format_code, normalize
-from src.saudi_plate import format_plate, parse_latin, to_arabic
-from src.store import COLUMNS, LINKS, Store, display, needs_review, to_excel, to_zip
+from src.iso6346 import format_code
+from src.store import COLUMNS, LINKS, Store, display, needs_review, parse_fix, to_excel, to_zip
 
 import cv2
 import numpy as np
@@ -31,9 +27,6 @@ import streamlit as st
 
 st.set_page_config(page_title='Container & Plate Gate OCR', page_icon='🚛', layout='wide')
 
-ROOT = Path(__file__).resolve().parent
-CONFIG = ROOT / 'cameras.json'
-LIVE = ROOT / DEFAULTS['live_dir']
 XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
 
@@ -47,40 +40,6 @@ def get_recognizer(max_side):
 @st.cache_resource
 def get_store():
     return Store(str(ROOT / DEFAULTS['db']))
-
-
-def load_config():
-    try:
-        return json.loads(CONFIG.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return {}
-
-
-def save_config(cfg):
-    """cameras.json is read by the gate service; it applies changes within a second."""
-    tmp = CONFIG.with_suffix('.tmp')
-    tmp.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-    os.replace(tmp, CONFIG)
-
-
-def service_status():
-    """(service running?, {camera name: status}) from the status file the service writes."""
-    try:
-        s = json.loads((LIVE / 'status.json').read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return False, {}
-    return time.time() - s.get('updated', 0) < 10, s.get('cameras', {})
-
-
-def start_service():
-    """Start the gate service in the background (no window); its output goes to logs/service.log."""
-    if not CONFIG.exists():
-        save_config({})
-    (ROOT / 'logs').mkdir(exist_ok=True)
-    log = open(ROOT / 'logs' / 'service.log', 'a', encoding='utf-8')
-    flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0) | getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)
-    subprocess.Popen([sys.executable, str(ROOT / 'cctv.py'), '--config', str(CONFIG)], cwd=ROOT,
-                     stdout=log, stderr=subprocess.STDOUT, creationflags=flags)
 
 
 def rgb(img):
@@ -146,16 +105,6 @@ def show_result(img, out, L):
             st.info(t('no_plate', L))
         with st.expander(t('all_text', L)):
             st.write(out['texts'])
-
-
-def grab_frame(source):
-    cap = open_capture(int(source) if str(source).isdigit() else source)
-    frame = None
-    for _ in range(5):  # skip stale buffered frames
-        ok, f = cap.read()
-        frame = f if ok else frame
-    cap.release()
-    return frame
 
 
 # ---------- layout ----------
@@ -262,38 +211,14 @@ with tab_rec:
                         new_dir = st.selectbox(t('direction', L), ['IN', 'OUT'], format_func=lambda x: t(x, L),
                                                index=['IN', 'OUT'].index(row.get('direction') or 'IN'))
                         if st.form_submit_button(t('save_fix', L), type='primary'):
-                            fix, errors = {'direction': new_dir}, []
-                            if new_plate.strip():
-                                p = parse_latin(new_plate)
-                                if p:
-                                    fix.update(plate=format_plate(*p), plate_ar=to_arabic(*p), plate_verified=1)
-                                else:
-                                    errors.append(t('bad_plate', L))
-                            else:
-                                fix.update(plate=None, plate_ar=None, plate_verified=None)
-                            if new_code.strip():
-                                c = normalize(new_code)
-                                if len(c) == 11 and c[:4].isalpha() and c[4:].isdigit():
-                                    fix.update(container=format_code(c), check_digit_ok=int(check_digit(c[:10]) == int(c[10])))
-                                    if not fix['check_digit_ok']:
-                                        st.warning(t('check_digit_wrong', L))
-                                else:
-                                    errors.append(t('bad_container', L))
-                            else:
-                                fix.update(container=None, check_digit_ok=None, size_type=None)
+                            fix, errors = parse_fix(new_plate, new_code, new_dir)
                             if errors:
                                 for e in errors:
-                                    st.error(e)
+                                    st.error(t(e, L))
                             else:
-                                store.correct(row['id'], **fix)
-                                gl = GateLog(store, DEFAULTS['snapshots'], ROOT / DEFAULTS['excel_dir'],
-                                             load_config().get('language', 'en'))
-                                gl.changed(day)
-                                gl.flush()
-                                with open(ROOT / 'logs' / 'corrections.jsonl', 'a', encoding='utf-8') as f:
-                                    f.write(json.dumps({'id': row['id'], 'before': {k: row.get(k) for k in fix},
-                                                        'after': fix, 'snapshot': row.get('snapshot')},
-                                                       ensure_ascii=False) + '\n')
+                                save_fix(store, row, fix)
+                                if fix['check_digit_ok'] == 0:
+                                    st.warning(t('check_digit_wrong', L))
                                 st.success(t('fix_saved', L))
                                 st.rerun()
         st.divider()
