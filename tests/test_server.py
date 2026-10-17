@@ -1,6 +1,7 @@
 """The web API (server.py), through FastAPI's test client."""
 import io
 import json
+import tempfile
 import time
 import zipfile
 from datetime import date
@@ -281,3 +282,51 @@ def test_stream_only_network_addresses(fake_ocr, monkeypatch):
     assert client.post('/api/stream/frame', json={'url': ' rtsp://cam/1 '}).status_code == 200 and opened == ['rtsp://cam/1']
     monkeypatch.setattr(config, 'grab_frame', lambda url: None)
     assert client.post('/api/stream/frame', json={'url': 'rtsp://cam/1'}).json()['detail'] == {'errors': ['camera_error']}
+
+
+def _truck_video(path, frames=60):
+    """A few seconds of the sample truck creeping forward, standing in for a gate camera."""
+    img = cv2.imread(str(ROOT / 'images' / 'ksa_mrsu_3231uta.jpg'))
+    vw = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*'mp4v'), 10, (img.shape[1], img.shape[0]))
+    for i in range(frames):
+        vw.write(np.roll(img, i // 3, axis=0))
+    vw.release()
+    return path.read_bytes()
+
+
+def _wait(job, timeout=180):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        body = client.get(f'/api/video/{job}').json()
+        if body['done']:
+            return body
+        time.sleep(0.5)
+    raise AssertionError('video job did not finish')
+
+
+def test_video_job_logs_one_truck(tmp_path):
+    """Slow (~15 s): real OCR on a short video, in a temporary database."""
+    video = _truck_video(tmp_path / 'gate.mp4')
+    r = client.post('/api/video', files={'file': ('gate.mp4', video, 'video/mp4')},
+                    data={'fps': '2', 'direction': 'OUT', 'location': 'Test lane', 'zoom': 'false'})
+    job = r.json()['job']
+    work = server._jobs[job].work
+    assert Path(tempfile.gettempdir()) in work.parents                          # never the real logs/
+    body = _wait(job)
+    assert body['error'] is None and body['progress'] == 1
+    assert [(x['direction'], x['plate'], x['container'], x['location']) for x in body['rows']] == \
+        [('OUT', '3231 UTA', 'MRSU 442576 1', 'Test lane')]
+    rid = body['rows'][0]['id']
+    assert client.get(f'/api/video/{job}/records/{rid}/snapshot').headers['content-type'] == 'image/jpeg'
+    assert client.get(f'/api/video/{job}/frame.jpg').status_code == 200
+    assert client.get(f'/api/video/{job}/excel').content[:2] == b'PK'
+
+    client.post('/api/video', files={'file': ('x.mp4', b'not a video', 'video/mp4')})  # a new video replaces it
+    assert client.get(f'/api/video/{job}').status_code == 404 and not work.exists()
+
+
+def test_video_job_bad_input():
+    r = client.post('/api/video', files={'file': ('x.mp4', b'not a video', 'video/mp4')})
+    assert _wait(r.json()['job'])['error'] == 'bad_video'
+    assert client.post('/api/video', files={'file': ('x.mp4', b'x', 'video/mp4')}, data={'fps': '50'}).status_code == 422
+    assert client.get('/api/video/nope').status_code == 404

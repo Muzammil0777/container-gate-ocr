@@ -258,6 +258,21 @@ TEXT = {
     'advanced': ('Advanced settings', 'إعدادات متقدمة'),
     'box_colors': ('Boxes: green = container confirmed, orange = container not confirmed, blue = number plate.',
                    'المربعات: أخضر = حاوية مؤكدة، برتقالي = حاوية غير مؤكدة، أزرق = لوحة سيارة.'),
+    'video_help': ('Play a recorded video through the reader as if it were a gate camera, and see which trucks it would log. '
+                   'Nothing is saved to the records.',
+                   'شغّل فيديو مسجلاً عبر القارئ كأنه كاميرا البوابة، وشاهد الشاحنات التي سيسجلها. لا يُحفظ شيء في السجلات.'),
+    'choose_video': ('Choose a video', 'اختيار فيديو'),
+    'dl_excel': ('Download Excel', 'تنزيل ملف Excel'),
+    'start_video': ('Start', 'ابدأ'),
+    'uploading': ('Sending the video…', 'جارٍ إرسال الفيديو…'),
+    'video_progress': ('{s} s of video read', 'تمت قراءة {s} ثانية من الفيديو'),
+    'video_done': ('Finished in {s} s: {n} truck(s) found.', 'انتهى خلال {s} ثانية: تم العثور على {n} شاحنة.'),
+    'bad_video': ('Could not play this video. Try an MP4 file.', 'تعذّر تشغيل هذا الفيديو. جرّب ملف MP4.'),
+    'video_failed': ('Something went wrong while reading the video.', 'حدث خطأ أثناء قراءة الفيديو.'),
+    'video_none': ('No truck was confirmed in this video.', 'لم يتم تأكيد أي شاحنة في هذا الفيديو.'),
+    'fps_help': ('More looks find more trucks but take longer.', 'المزيد من القراءات يجد شاحنات أكثر لكنه يستغرق وقتاً أطول.'),
+    'min_hits_help': ('How many times a plate or container must be read before it counts.',
+                      'عدد مرات قراءة اللوحة أو الحاوية قبل اعتمادها.'),
 }
 
 

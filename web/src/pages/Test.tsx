@@ -6,13 +6,14 @@ import {
 import { IconAlertTriangle, IconPhotoUp, IconScan } from '@tabler/icons-react'
 import { api, ApiError, send, useT } from '../api'
 import OcrResultView, { type OcrResult } from '../components/OcrResult'
+import VideoTest from '../components/VideoTest'
 
 type Options = { max_side: number; zoom: boolean; vertical: boolean; plates: boolean }
 type Item = { name: string; result?: OcrResult; problem?: string }
 
 export default function Test() {
   const t = useT()
-  const [mode, setMode] = useState<'photo' | 'stream'>('photo')
+  const [mode, setMode] = useState<'photo' | 'video' | 'stream'>('photo')
   const [opts, setOpts] = useState<Options>({ max_side: 1920, zoom: true, vertical: true, plates: true })
   const [items, setItems] = useState<Item[]>([])
 
@@ -33,9 +34,11 @@ export default function Test() {
   return (
     <Stack gap="lg">
       <Text c="dimmed">{t('test_intro')}</Text>
-      <SegmentedControl value={mode} onChange={(v) => { setMode(v as 'photo' | 'stream'); setItems([]) }} w="fit-content"
-                        data={[{ value: 'photo', label: t('test_image') }, { value: 'stream', label: t('test_stream') }]} />
-      {mode === 'photo' ? <PhotoInput opts={opts} readAll={readAll} /> : <StreamInput opts={opts} readAll={readAll} />}
+      <SegmentedControl value={mode} onChange={(v) => { setMode(v as 'photo' | 'video' | 'stream'); setItems([]) }} w="fit-content"
+                        data={[{ value: 'photo', label: t('test_image') }, { value: 'video', label: t('test_video') }, { value: 'stream', label: t('test_stream') }]} />
+      {mode === 'photo' ? <PhotoInput opts={opts} readAll={readAll} />
+        : mode === 'video' ? <VideoTest opts={opts} />
+        : <StreamInput opts={opts} readAll={readAll} />}
       <Advanced opts={opts} setOpts={setOpts} />
 
       {items.map((it, i) => (

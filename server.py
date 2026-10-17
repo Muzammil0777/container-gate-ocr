@@ -6,6 +6,9 @@ records come from the database it writes (see src/config.py).
 """
 import argparse
 import base64
+import secrets
+import shutil
+import tempfile
 import threading
 import time
 from datetime import date
@@ -28,6 +31,7 @@ from pydantic import BaseModel, Field, StringConstraints
 
 from cctv import DEFAULTS, _safe
 from src.camera import hikvision_url, port_open, redact
+from src.gate import GateLog, GateTracker
 from src.i18n import LANGUAGES, TEXT
 from src.iso6346 import format_code
 from src.recognizer import Recognizer, draw
@@ -38,6 +42,7 @@ XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 OFFLINE_S = 15       # a camera with no new picture for this long is shown as offline
 STARTING_S = 30      # after "Start detection", how long the page says "starting"
 MAX_UPLOAD = 25 << 20  # bytes per uploaded photo
+MAX_VIDEO = 4 << 30    # bytes per uploaded video
 _started_at = 0.0
 _ocr_lock = threading.Lock()  # one OCR at a time: it already uses every CPU core
 
@@ -332,6 +337,133 @@ def ocr_stream(req: StreamRequest):
     return read_image(frame, **req.model_dump(exclude={'url'}))
 
 
+class VideoJob:
+    """A video played through the gate pipeline in the background, as if it were a camera:
+    trucks are confirmed across frames and logged to a temporary database (never the real one)."""
+
+    def __init__(self, work):
+        self.work, self.progress, self.seconds, self.ids = work, 0.0, 0.0, []
+        self.done, self.error, self.cancel, self.frame = False, None, False, None
+        self.started = time.time()
+        self.store = Store(str(work / 'gate.db'))
+
+    def run(self, path, fps, min_hits, direction, location, opts):
+        try:
+            cap = cv2.VideoCapture(str(path))
+            vfps = cap.get(cv2.CAP_PROP_FPS) or 25
+            total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 1
+            step = max(1, round(vfps / fps))
+            tracker = GateTracker(min_hits=min_hits)
+            log = GateLog(self.store, self.work / 'snapshots', self.work / 'excel')
+            n = 0
+            while not self.cancel:
+                ok, frame = cap.read()
+                if not ok:
+                    break
+                n += 1
+                if n % step:
+                    continue
+                with _ocr_lock:
+                    out = get_recognizer(opts['max_side'])(frame, **{k: v for k, v in opts.items() if k != 'max_side'})
+                self._log(log, tracker.update(out['codes'], frame, n / vfps, out['plates']), direction, location)
+                self.frame = _jpeg(draw(frame, out['codes'], out['plates']), 960)
+                self.progress, self.seconds = min(1.0, n / total), n / vfps
+            cap.release()
+            if n == 0:
+                self.error = 'bad_video'
+            self._log(log, tracker.flush(n / vfps), direction, location)
+            self.progress = 1.0
+        except Exception as e:  # noqa: BLE001  (shown on the page; details in the server window)
+            print(f'[server] video test failed: {e!r}')
+            self.error = 'video_failed'
+        finally:
+            self.done = True
+            if self.cancel:
+                self.discard()
+
+    def _log(self, log, events, direction, location):
+        for e in events:
+            r = log.log(e, 'Video test', location, direction)
+            if r['status'] == 'added':
+                self.ids.append(r['id'])
+
+    def rows(self):
+        return [_public(self.store.get(i)) for i in self.ids]
+
+    def discard(self):
+        self.store.db.close()
+        shutil.rmtree(self.work, ignore_errors=True)
+
+
+_jobs: dict[str, VideoJob] = {}
+
+
+def _job(job_id):
+    job = _jobs.get(job_id)
+    if job is None:
+        raise HTTPException(404)
+    return job
+
+
+@app.post('/api/video')
+def video_start(file: UploadFile = File(...), fps: float = Form(2.0), min_hits: int = Form(2),
+                direction: str = Form('IN'), location: str = Form(''), max_side: int = Form(1920),
+                zoom: bool = Form(True), vertical: bool = Form(True), plates: bool = Form(True)):
+    """Start reading an uploaded video in the background; returns {'job': id}. One video at a
+    time: starting one discards the previous one and its temporary files."""
+    try:
+        opts = OcrOptions(max_side=max_side, zoom=zoom, vertical=vertical, plates=plates).model_dump()
+    except ValueError:
+        raise HTTPException(422, {'errors': ['bad_options']}) from None
+    if not (0.5 <= fps <= 5 and 1 <= min_hits <= 5 and direction in ('IN', 'OUT')):
+        raise HTTPException(422, {'errors': ['bad_options']})
+    for old in _jobs.values():
+        old.cancel = True
+        if old.done:
+            old.discard()
+    _jobs.clear()
+    work = Path(tempfile.mkdtemp(prefix='gate_video_'))
+    path = work / ('video' + Path(file.filename or '').suffix.lower())
+    with open(path, 'wb') as f:
+        while chunk := file.file.read(1 << 20):
+            if f.tell() + len(chunk) > MAX_VIDEO:
+                f.close()
+                shutil.rmtree(work, ignore_errors=True)
+                raise HTTPException(413, {'errors': ['too_big']})
+            f.write(chunk)
+    job_id, job = secrets.token_hex(8), VideoJob(work)
+    _jobs[job_id] = job
+    threading.Thread(target=job.run, args=(path, fps, min_hits, direction, location.strip(), opts), daemon=True).start()
+    return {'job': job_id}
+
+
+@app.get('/api/video/{job_id}')
+def video_status(job_id: str):
+    job = _job(job_id)
+    return {'progress': round(job.progress, 3), 'seconds': round(job.seconds, 1), 'done': job.done,
+            'error': job.error, 'elapsed': round(time.time() - job.started), 'rows': job.rows()}
+
+
+@app.get('/api/video/{job_id}/frame.jpg')
+def video_frame(job_id: str):
+    """The last picture read, with its boxes."""
+    frame = _job(job_id).frame
+    if frame is None:
+        raise HTTPException(404)
+    return Response(frame, media_type='image/jpeg', headers={'Cache-Control': 'no-store'})
+
+
+@app.get('/api/video/{job_id}/records/{rid}/{kind}')
+def video_photo(job_id: str, rid: int, kind: Literal['snapshot', 'plate_image']):
+    return record_photo(rid, kind, _job(job_id).store)
+
+
+@app.get('/api/video/{job_id}/excel')
+def video_excel(job_id: str, lang: str = 'en'):
+    job = _job(job_id)
+    return _download(to_excel([job.store.get(i) for i in job.ids], lang), 'gate_log_video_test.xlsx', XLSX)
+
+
 def _public(row):
     """A stored row for the browser: photo paths on this computer are replaced by yes/no."""
     return {**row, 'needs_review': needs_review(row),
@@ -409,6 +541,8 @@ def main():
     args = ap.parse_args()
     if not WEB.is_dir():
         print(f'[server] {WEB} is missing: build the app first (cd web && npm install && npm run build)')
+    for leftover in Path(tempfile.gettempdir()).glob('gate_video_*'):  # video tests from an earlier run
+        shutil.rmtree(leftover, ignore_errors=True)
     uvicorn.run(app, host=args.host, port=args.port)
 
 

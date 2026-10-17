@@ -59,10 +59,10 @@ Details, acceptance criteria and checks per task: [todo.md](todo.md).
 - [x] Task 6: Cameras page: NVR login, camera list
 - [x] Task 7: Add camera: draw the reading area on a picture, test the camera
 - [x] Task 8: Test page: photos and stream URL
-- [ ] Task 9: Test page: video file as a background job
+- [x] Task 9: Test page: video file as a background job
 
 ### Checkpoint: Feature parity
-- [ ] Everything the Streamlit app does can be done in the React app
+- [x] Everything the Streamlit app does can be done in the React app
 
 ### Phase 4: Made for non-technical users, and roll-out
 - [ ] Task 10: First-run setup wizard and plain-language help

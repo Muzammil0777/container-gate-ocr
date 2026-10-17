@@ -160,7 +160,7 @@ API: `POST /api/ocr` (upload, with options), `GET /api/samples`, `POST /api/stre
 **Files:** `server.py`, `web/src/pages/Test.tsx`, `src/i18n.py`, `requirements.txt` (python-multipart), `tests/test_server.py`
 **Scope:** S
 
-### Task 9: Test page: video file as a background job
+### Task 9: Test page: video file as a background job ✅
 **Description:** Upload a video, choose looks/second, In/Out, location → "Process". The server
 runs it in a background thread (same GateTracker/GateLog code as app.py today, in a temp
 folder) and the page shows a progress bar and the latest frame, then the trucks found with
@@ -168,18 +168,18 @@ their snapshots and an Excel download.
 API: `POST /api/video` → job id, `GET /api/video/{job}` (progress, frame, rows), `GET /api/video/{job}/excel`.
 
 **Acceptance criteria:**
-- [ ] Page stays usable while the video is processed; progress moves
-- [ ] Same trucks found as the Streamlit Test tab for the same video
-- [ ] Test runs don't touch the real `logs/gate.db`
+- [x] Page stays usable while the video is processed; progress moves
+- [x] Same trucks found as the Streamlit Test tab for the same video
+- [x] Test runs don't touch the real `logs/gate.db`
 
-**Verification:** Test with a short clip from `videos/` (or skip if none present); manual run.
+**Verification:** API tests (real OCR on a 6 s synthetic video finds the one truck in a temp folder; a new video discards the old one and its files; broken video; bad settings); in the browser: a 40 s two-truck video found both trucks in 81 s with live progress, snapshots and Excel, other requests answered in ~10 ms meanwhile, real records untouched. Leftover video folders are cleared when the server starts.
 **Dependencies:** Task 8
-**Files:** `server.py`, `web/src/pages/Test.tsx`
+**Files:** `server.py`, `web/src/pages/Test.tsx`, `web/src/components/VideoTest.tsx`, `src/i18n.py`, `tests/test_server.py`
 **Scope:** M
 
 ### Checkpoint: Feature parity
-- [ ] Tests and build pass
-- [ ] Walk through every Streamlit tab and do the same in React
+- [x] Tests and build pass
+- [x] Walk through every Streamlit tab and do the same in React (Live: cameras, start detection, today's trucks and Excel; Records: day, review filter, photos, fix, day/month Excel, ZIP; Cameras: NVR login, Excel language, add/replace, on/off, delete, reading area, camera test; Test: photo, video, stream, OCR settings)
 - [ ] Review with the user
 
 ---
