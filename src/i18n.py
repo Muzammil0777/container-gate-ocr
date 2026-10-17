@@ -221,6 +221,27 @@ TEXT = {
     'delete_confirm': ('Delete "{name}"? Trucks it already logged stay in the records.',
                        'حذف "{name}"؟ تبقى الشاحنات التي سجلتها في السجلات.'),
     'delete_yes': ('Delete', 'حذف'),
+    'add_camera_btn': ('Add a camera', 'إضافة كاميرا'),
+    'new_camera': ('New camera', 'كاميرا جديدة'),
+    'channel_help': ('The number of this camera on the recorder (1, 2, 3…).', 'رقم هذه الكاميرا في جهاز التسجيل (1، 2، 3…).'),
+    'direction_help': ('Do trucks come in or go out past this camera?', 'هل تدخل الشاحنات أم تخرج أمام هذه الكاميرا؟'),
+    'reading_area': ('Reading area', 'منطقة القراءة'),
+    'area_help': ('Get a picture, then drag a box over the spot where trucks pass close to the camera. '
+                  'Only that part is read, which is faster and more accurate.',
+                  'اجلب صورة، ثم اسحب مربعاً فوق المكان الذي تمر فيه الشاحنات قريبة من الكاميرا. '
+                  'تتم قراءة هذا الجزء فقط، وهذا أسرع وأدق.'),
+    'get_picture': ('Get picture', 'جلب صورة'),
+    'whole_picture': ('Use the whole picture', 'استخدام الصورة كاملة'),
+    'area_whole': ('The whole picture is read.', 'تتم قراءة الصورة كاملة.'),
+    'area_drawn': ('Only the marked area is read.', 'تتم قراءة المنطقة المحددة فقط.'),
+    'test_reading': ('Test reading', 'اختبار القراءة'),
+    'no_nvr': ('Save the recorder settings above first, to see the camera picture.',
+               'احفظ إعدادات جهاز التسجيل أعلاه أولاً لرؤية صورة الكاميرا.'),
+    'bad_area': ('The reading area is not valid. Draw it again.', 'منطقة القراءة غير صالحة. ارسمها مرة أخرى.'),
+    'read_in': ('Read in {ms} ms', 'تمت القراءة في {ms} مللي ثانية'),
+    'nothing_found': ('Nothing readable found. Move the reading area, or try again when a truck is there.',
+                      'لم يتم العثور على شيء مقروء. حرّك منطقة القراءة أو أعد المحاولة عند وجود شاحنة.'),
+    'save_camera_web': ('Save camera', 'حفظ الكاميرا'),
 }
 
 

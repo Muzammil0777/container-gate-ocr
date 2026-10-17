@@ -57,7 +57,7 @@ Details, acceptance criteria and checks per task: [todo.md](todo.md).
 
 ### Phase 3: Setup and testing
 - [x] Task 6: Cameras page: NVR login, camera list
-- [ ] Task 7: Add camera: draw the reading area on a picture, test the camera
+- [x] Task 7: Add camera: draw the reading area on a picture, test the camera
 - [ ] Task 8: Test page: photos and stream URL
 - [ ] Task 9: Test page: video file as a background job
 

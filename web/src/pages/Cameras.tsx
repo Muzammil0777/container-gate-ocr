@@ -3,8 +3,9 @@ import {
   ActionIcon, Alert, Badge, Button, Card, Group, Modal, NumberInput, Paper, PasswordInput, SegmentedControl,
   SimpleGrid, Stack, Switch, Text, TextInput, Title, Tooltip,
 } from '@mantine/core'
-import { IconAlertTriangle, IconCheck, IconTrash } from '@tabler/icons-react'
+import { IconAlertTriangle, IconCheck, IconPlus, IconTrash } from '@tabler/icons-react'
 import { api, ApiError, send, useT } from '../api'
+import AddCamera from '../components/AddCamera'
 import { Direction } from '../components/TruckTable'
 
 export type Camera = {
@@ -21,6 +22,8 @@ export default function Cameras() {
   const t = useT()
   const [settings, setSettings] = useState<Settings>()
   const [failed, setFailed] = useState(false)
+  const [adding, setAdding] = useState(false)
+  const [added, setAdded] = useState<string>()
 
   useEffect(() => { api<Settings>('/api/settings').then(setSettings).catch(() => setFailed(true)) }, [])
 
@@ -30,6 +33,13 @@ export default function Cameras() {
     <Stack gap="xl">
       <RecorderForm settings={settings} onSaved={setSettings} />
       <CameraList cameras={settings.cameras} onChanged={setSettings} />
+      {added && <Alert color="teal" icon={<IconCheck />} withCloseButton onClose={() => setAdded(undefined)}>{t('camera_saved', { name: added })}</Alert>}
+      {adding ? (
+        <AddCamera settings={settings} onCancel={() => setAdding(false)}
+                   onSaved={(s, name) => { setSettings(s); setAdding(false); setAdded(name) }} />
+      ) : (
+        <Group><Button size="md" leftSection={<IconPlus size={18} />} onClick={() => { setAdded(undefined); setAdding(true) }}>{t('add_camera_btn')}</Button></Group>
+      )}
     </Stack>
   )
 }

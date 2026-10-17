@@ -5,6 +5,8 @@ Detection itself runs in the gate service (cctv.py), configured through cameras.
 records come from the database it writes (see src/config.py).
 """
 import argparse
+import base64
+import threading
 import time
 from datetime import date
 from functools import lru_cache
@@ -15,16 +17,19 @@ from typing import Annotated, Literal
 # onnxruntime fail with "DLL load failed while importing onnxruntime_pybind11_state".
 from src import config  # noqa: I001
 
+import cv2
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi import Path as PathParam
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 from cctv import DEFAULTS, _safe
-from src.camera import port_open, redact
+from src.camera import hikvision_url, port_open, redact
 from src.i18n import LANGUAGES, TEXT
+from src.iso6346 import format_code
+from src.recognizer import Recognizer, draw
 from src.store import Store, needs_review, parse_fix, to_excel, to_zip
 
 WEB = config.ROOT / 'web' / 'dist'
@@ -32,6 +37,7 @@ XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 OFFLINE_S = 15       # a camera with no new picture for this long is shown as offline
 STARTING_S = 30      # after "Start detection", how long the page says "starting"
 _started_at = 0.0
+_ocr_lock = threading.Lock()  # one OCR at a time: it already uses every CPU core
 
 app = FastAPI(title='Container Gate OCR')
 
@@ -160,6 +166,105 @@ def delete_camera(name: str):
     cfg['cameras'].remove(_camera(cfg, name))
     config.save_config(cfg)
     return get_settings()
+
+
+class NewCamera(BaseModel):
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)]
+    channel: int = Field(ge=1, le=64)
+    direction: Literal['IN', 'OUT'] = 'IN'
+    location: str = ''
+    roi: list[float] | None = None  # reading area [left, top, right, bottom], fractions of the picture
+
+
+def _check_roi(roi):
+    if roi is not None and not (len(roi) == 4 and 0 <= roi[0] < roi[2] <= 1 and 0 <= roi[1] < roi[3] <= 1):
+        raise HTTPException(422, {'errors': ['bad_area']})
+
+
+@app.post('/api/cameras')
+def add_camera(cam: NewCamera):
+    """Add a camera, or replace the one with the same name (in its place). Detection starts on
+    it within a few seconds."""
+    _check_roi(cam.roi)
+    new = {'name': cam.name, 'channel': cam.channel, 'direction': cam.direction,
+           'location': cam.location.strip(), 'enabled': True}
+    if cam.roi:
+        new['roi'] = [round(v, 3) for v in cam.roi]
+    cfg = config.load_config()
+    cams = cfg.setdefault('cameras', [])
+    i = next((i for i, c in enumerate(cams) if c['name'] == cam.name), len(cams))
+    cams[i:i + 1] = [new]
+    cfg.setdefault('autostart', True)
+    config.save_config(cfg)
+    return get_settings()
+
+
+class Channel(BaseModel):
+    channel: int = Field(ge=1, le=64)
+    roi: list[float] | None = None
+
+
+def _grab(channel):
+    """One picture from an NVR channel, with the saved login. Problems come back as text keys:
+    no_nvr (not set up), unreachable (network), no_video (login, channel or RTSP setting)."""
+    nvr = config.load_config().get('nvr', {})
+    if not nvr.get('ip'):
+        raise HTTPException(422, {'errors': ['no_nvr']})
+    port = nvr.get('port', 554)
+    if not port_open(nvr['ip'], port):
+        raise HTTPException(422, {'errors': ['unreachable']})
+    frame = config.grab_frame(hikvision_url(nvr['ip'], nvr.get('user', ''), nvr.get('password', ''), channel, port=port))
+    if frame is None:
+        raise HTTPException(422, {'errors': ['no_video']})
+    return frame
+
+
+def _jpeg(img, max_width=1600):
+    """JPEG bytes, scaled down to max_width (plenty for a screen, much less to send)."""
+    if img.shape[1] > max_width:
+        f = max_width / img.shape[1]
+        img = cv2.resize(img, None, fx=f, fy=f, interpolation=cv2.INTER_AREA)
+    return cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tobytes()
+
+
+@app.post('/api/cameras/frame')
+def camera_frame(req: Channel):
+    """The camera's current picture, for drawing its reading area."""
+    return Response(_jpeg(_grab(req.channel)), media_type='image/jpeg', headers={'Cache-Control': 'no-store'})
+
+
+@app.post('/api/cameras/test')
+def camera_test(req: Channel):
+    """Read the camera's current picture (only its reading area, like the detection service)."""
+    _check_roi(req.roi)
+    frame = _grab(req.channel)
+    if req.roi:
+        H, W = frame.shape[:2]
+        x0, y0, x1, y1 = req.roi
+        frame = frame[int(y0 * H):int(y1 * H), int(x0 * W):int(x1 * W)]
+    return read_image(frame)
+
+
+@lru_cache(maxsize=2)  # each copy of the models is ~100 MB
+def get_recognizer(max_side=1920):
+    return Recognizer(max_side=max_side)
+
+
+def read_image(img, max_side=1920, **opts):
+    """What the OCR reads in a picture, for the browser: container codes, plates, all text,
+    time taken, and the picture with the boxes drawn (a data: URL)."""
+    with _ocr_lock:
+        out = get_recognizer(max_side)(img, **opts)
+    shown = draw(img.copy(), out['codes'], out['plates'])
+    return {
+        'ms': round(out['ms']),
+        'codes': [{'code': format_code(c['code']), 'valid': bool(c['valid']), 'readable': not c['code'].endswith('?'),
+                   'size_type': c['size_type'] or '', 'score': round(float(c['score']), 2)} for c in out['codes']],
+        'plates': [{'plate': p['plate'], 'arabic': p['arabic'], 'verified': bool(p['verified']),
+                    'score': round(float(p['score']), 2)} for p in out['plates']],
+        'texts': [str(x) for x in out['texts']],
+        'image': 'data:image/jpeg;base64,' + base64.b64encode(_jpeg(shown)).decode(),
+    }
 
 
 def _public(row):

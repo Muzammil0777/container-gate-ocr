@@ -4,7 +4,10 @@ import json
 import time
 import zipfile
 from datetime import date
+from pathlib import Path
 
+import cv2
+import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
@@ -15,6 +18,7 @@ from src.i18n import TEXT
 from src.store import Store
 
 client = TestClient(app)
+ROOT = Path(__file__).resolve().parent.parent
 
 
 def test_health():
@@ -183,3 +187,52 @@ def test_settings_hide_camera_secrets(site):
     r = client.get('/api/settings')
     assert 'hunter2' not in r.text
     assert r.json()['cameras'][3]['source'] == 'rtsp://***@10.0.0.5:554/stream'
+
+
+def test_add_camera(site):
+    r = client.post('/api/cameras', json={'name': ' Gate 3 ', 'channel': 3, 'direction': 'OUT', 'roi': [0.1, 0.2, 0.9, 1]})
+    assert r.status_code == 200
+    cam = config.load_config()['cameras'][-1]
+    assert cam == {'name': 'Gate 3', 'channel': 3, 'direction': 'OUT', 'location': '', 'enabled': True, 'roi': [0.1, 0.2, 0.9, 1]}
+    client.post('/api/cameras', json={'name': 'Gate 1', 'channel': 5})            # same name: replaced in place
+    cams = config.load_config()['cameras']
+    assert [c['name'] for c in cams] == ['Gate 1', 'Gate 2', 'Old', 'Gate 3'] and cams[0]['channel'] == 5
+    assert 'roi' not in cams[0] and config.load_config()['autostart'] is True
+    for bad in ({'name': '  ', 'channel': 1}, {'name': 'X', 'channel': 0},
+                {'name': 'X', 'channel': 1, 'roi': [0.5, 0, 0.4, 1]}, {'name': 'X', 'channel': 1, 'roi': [0, 0, 1]}):
+        assert client.post('/api/cameras', json=bad).status_code == 422, bad
+
+
+def test_camera_frame_problems(site, monkeypatch):
+    errors = lambda r: r.json()['detail']['errors']  # noqa: E731
+    assert errors(client.post('/api/cameras/frame', json={'channel': 1})) == ['no_nvr']
+    config.save_config({**config.load_config(), 'nvr': {'ip': '10.0.0.9', 'user': 'admin', 'password': 'x'}})
+    monkeypatch.setattr(server, 'port_open', lambda ip, port: False)
+    assert errors(client.post('/api/cameras/frame', json={'channel': 1})) == ['unreachable']
+    monkeypatch.setattr(server, 'port_open', lambda ip, port: True)
+    monkeypatch.setattr(config, 'grab_frame', lambda url: None)
+    assert errors(client.post('/api/cameras/frame', json={'channel': 1})) == ['no_video']
+    urls = []
+    monkeypatch.setattr(config, 'grab_frame', lambda url: urls.append(url) or np.zeros((2160, 3840, 3), np.uint8))
+    r = client.post('/api/cameras/frame', json={'channel': 2})
+    assert r.headers['content-type'] == 'image/jpeg'
+    assert cv2.imdecode(np.frombuffer(r.content, np.uint8), cv2.IMREAD_COLOR).shape == (900, 1600, 3)  # scaled to send
+    assert urls == ['rtsp://admin:x@10.0.0.9:554/Streaming/Channels/201']
+
+
+def test_camera_test_reads_only_the_area(site, monkeypatch):
+    config.save_config({**config.load_config(), 'nvr': {'ip': '10.0.0.9', 'user': 'admin', 'password': 'x'}})
+    monkeypatch.setattr(server, 'port_open', lambda ip, port: True)
+    monkeypatch.setattr(config, 'grab_frame', lambda url: np.zeros((1000, 2000, 3), np.uint8))
+    seen = []
+    monkeypatch.setattr(server, 'get_recognizer', lambda side: lambda img, **o: seen.append(img.shape) or
+                        {'codes': [], 'plates': [], 'texts': [], 'ms': 5.0})
+    r = client.post('/api/cameras/test', json={'channel': 1, 'roi': [0.5, 0, 1, 0.5]})
+    assert r.status_code == 200 and seen == [(500, 1000, 3)]
+    assert r.json()['image'].startswith('data:image/jpeg;base64,')
+
+
+def test_read_image_finds_code_and_plate():
+    out = server.read_image(cv2.imread(str(ROOT / 'images' / 'ksa_mrsu_3231uta.jpg')))
+    assert {'code': 'MRSU 442576 1', 'valid': True} in [{k: c[k] for k in ('code', 'valid')} for c in out['codes']]
+    assert '3231 UTA' in [p['plate'] for p in out['plates']] and out['ms'] > 0

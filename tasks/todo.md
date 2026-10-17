@@ -128,20 +128,20 @@ API: `GET/PUT /api/settings`, `PATCH/DELETE /api/cameras/{name}`.
 **Files:** `server.py`, `web/src/pages/Cameras.tsx`, `tests/test_server.py`
 **Scope:** M
 
-### Task 7: Add camera: draw the reading area, test the camera
+### Task 7: Add camera: draw the reading area, test the camera ✅
 **Description:** "Add camera" form (name, channel, In/Out, location). Instead of four
 sliders, the user clicks "Get picture", sees the camera's current frame and **drags a box**
 over where trucks pass. "Test" button runs OCR on one frame and shows what it read.
 API: `POST /api/cameras`, `POST /api/cameras/frame` (grab one frame), `POST /api/ocr` (image → result + annotated image).
 
 **Acceptance criteria:**
-- [ ] Drawn box is saved as the same `roi` fractions `cctv.py` reads today
-- [ ] Without drawing a box, the whole picture is used
-- [ ] Test result shows the annotated picture plus container/plate found, or "Nothing found"
+- [x] Drawn box is saved as the same `roi` fractions `cctv.py` reads today
+- [x] Without drawing a box, the whole picture is used
+- [x] Test result shows the annotated picture plus container/plate found, or "Nothing found"
 
-**Verification:** Test that `roi` is stored correctly; manual with the NVR (or a video file source).
+**Verification:** API tests (add/replace in place, bad name/channel/area, no_nvr/unreachable/no_video, frame scaled for sending, test reads only the area, real OCR on a sample); in the browser on a test copy with a fake recorder picture: get picture, drag area, test reading found the container and plate, saved with the area. Not yet tried against a real Hikvision NVR.
 **Dependencies:** Task 6
-**Files:** `server.py`, `web/src/pages/Cameras.tsx`, `web/src/components/AreaPicker.tsx`, `web/src/components/OcrResult.tsx`
+**Files:** `server.py`, `web/src/pages/Cameras.tsx`, `web/src/components/AddCamera.tsx`, `web/src/components/AreaPicker.tsx`, `web/src/components/OcrResult.tsx`, `src/i18n.py`, `tests/test_server.py`
 **Scope:** M
 
 ### Task 8: Test page: photos and stream URL
