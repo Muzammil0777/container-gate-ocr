@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react'
 import {
-  Alert, AppShell, Burger, Center, Group, Loader, NavLink, Paper, SegmentedControl, Stack, Text,
-  ThemeIcon, Title, useDirection,
+  ActionIcon, Alert, AppShell, Burger, Center, Group, Loader, NavLink, Paper, SegmentedControl, Stack, Text,
+  ThemeIcon, Title, Tooltip, useDirection,
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
-import { IconCamera, IconClipboardList, IconFlask, IconTruck, IconVideo } from '@tabler/icons-react'
-import { api, type Lang, TextContext, type TextTable, useT } from './api'
+import { IconCamera, IconClipboardList, IconFlask, IconLock, IconLogout, IconTruck, IconVideo } from '@tabler/icons-react'
+import { api, type Auth, type Lang, send, TextContext, type TextTable, useT } from './api'
 import type { Settings } from './pages/Cameras'
 import Cameras from './pages/Cameras'
 import Live from './pages/Live'
+import Login from './pages/Login'
 import Records from './pages/Records'
 import Setup, { setupSkipped } from './pages/Setup'
 import Test from './pages/Test'
@@ -37,12 +38,17 @@ export default function App() {
   const [text, setText] = useState<TextTable | null>(null)
   const [languages, setLanguages] = useState<Record<string, string>>({})
   const [failed, setFailed] = useState(false)
+  const [auth, setAuth] = useState<Auth>()
   const { setDirection } = useDirection()
 
+  const loadAuth = () => api<Auth>('/api/auth').then(setAuth).catch(() => setFailed(true))
   useEffect(() => {
     api<{ languages: Record<string, string>; text: TextTable }>('/api/text')
       .then((r) => { setText(r.text); setLanguages(r.languages) })
       .catch(() => setFailed(true))
+    loadAuth()
+    addEventListener('gate-auth', loadAuth)  // signed out by the server, or the password was set/changed
+    return () => removeEventListener('gate-auth', loadAuth)
   }, [])
 
   useEffect(() => {
@@ -61,16 +67,38 @@ export default function App() {
       </Center>
     )
   }
-  if (!text) return <Center h="100vh"><Loader /></Center>
+  if (!text || !auth) return <Center h="100vh"><Loader /></Center>
 
+  const languageSwitch = (
+    <SegmentedControl value={lang} onChange={(v) => setLang(v as Lang)}
+                      data={Object.entries(languages).map(([value, label]) => ({ value, label }))} />
+  )
   return (
     <TextContext.Provider value={{ lang, text }}>
-      <Shell lang={lang} setLang={setLang} languages={languages} />
+      {auth.password_set && !auth.logged_in ? <Login onDone={loadAuth} languageSwitch={languageSwitch} />
+        : !auth.password_set && !auth.local ? <LocalOnly languageSwitch={languageSwitch} />
+        : <Shell languageSwitch={languageSwitch} auth={auth} onSignOut={() => send('POST', '/api/logout', {}).then(loadAuth)} />}
     </TextContext.Provider>
   )
 }
 
-function Shell({ lang, setLang, languages }: { lang: Lang; setLang: (l: Lang) => void; languages: Record<string, string> }) {
+/** Another device, before the site has a password: the API only answers the gate computer. */
+function LocalOnly({ languageSwitch }: { languageSwitch: React.ReactNode }) {
+  const t = useT()
+  return (
+    <Center mih="100vh" p="md">
+      <Paper withBorder radius="lg" p="xl" maw={440}>
+        <Stack align="center" gap="md">
+          {languageSwitch}
+          <IconLock size={44} stroke={1.4} color="var(--mantine-color-dimmed)" />
+          <Text ta="center">{t('local_only')}</Text>
+        </Stack>
+      </Paper>
+    </Center>
+  )
+}
+
+function Shell({ languageSwitch, auth, onSignOut }: { languageSwitch: React.ReactNode; auth: Auth; onSignOut: () => void }) {
   const t = useT()
   const [page, setPage] = useState<Page>(pageFromHash)
   const [opened, { toggle, close }] = useDisclosure()
@@ -105,11 +133,16 @@ function Shell({ lang, setLang, languages }: { lang: Lang; setLang: (l: Lang) =>
             </ThemeIcon>
             <Title order={3} visibleFrom="xs">{t('app_name')}</Title>
           </Group>
-          <SegmentedControl
-            value={lang}
-            onChange={(v) => setLang(v as Lang)}
-            data={Object.entries(languages).map(([value, label]) => ({ value, label }))}
-          />
+          <Group gap="xs" wrap="nowrap">
+            {languageSwitch}
+            {auth.password_set && (
+              <Tooltip label={t('sign_out')}>
+                <ActionIcon variant="subtle" color="gray" size="lg" onClick={onSignOut} aria-label={t('sign_out')}>
+                  <IconLogout size={20} />
+                </ActionIcon>
+              </Tooltip>
+            )}
+          </Group>
         </Group>
       </AppShell.Header>
 

@@ -6,6 +6,8 @@ records come from the database it writes (see src/config.py).
 """
 import argparse
 import base64
+import hashlib
+import hmac
 import secrets
 import shutil
 import tempfile
@@ -23,9 +25,9 @@ from src import config  # noqa: I001
 import cv2
 import numpy as np
 import uvicorn
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Response, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi import Path as PathParam
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, StringConstraints
 
@@ -45,8 +47,124 @@ MAX_UPLOAD = 25 << 20  # bytes per uploaded photo
 MAX_VIDEO = 4 << 30    # bytes per uploaded video
 _started_at = 0.0
 _ocr_lock = threading.Lock()  # one OCR at a time: it already uses every CPU core
+COOKIE, SESSION_S = 'gate_session', 30 * 24 * 3600
+OPEN_API = {'/api/health', '/api/text', '/api/auth', '/api/login'}  # usable before logging in
+MAX_TRIES, TRIES_WINDOW_S = 10, 300  # wrong passwords per device before it has to wait
+_failures: dict[str, list[float]] = {}
 
 app = FastAPI(title='Container Gate OCR')
+
+
+# ---------- site login ----------
+# One password per site, stored as a salted PBKDF2 hash in cameras.json. A login is a signed
+# cookie (expiry + HMAC with a per-site secret); changing the password changes the secret, which
+# logs every device out. Until a password is set, the API answers only the gate computer itself.
+
+def hash_password(password, salt=None, rounds=200_000):
+    salt = salt or secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac('sha256', password.encode(), bytes.fromhex(salt), rounds).hex()
+    return f'pbkdf2_sha256${rounds}${salt}${digest}'
+
+
+def check_password(password, stored):
+    try:
+        _, rounds, salt, _ = stored.split('$')
+        return hmac.compare_digest(hash_password(password, salt, int(rounds)), stored)
+    except (AttributeError, ValueError):
+        return False
+
+
+def _session(secret, expires):
+    return f"{expires}.{hmac.new(bytes.fromhex(secret), str(expires).encode(), 'sha256').hexdigest()}"
+
+
+def _logged_in(cfg, cookie):
+    try:
+        expires = int((cookie or '').split('.')[0])
+    except ValueError:
+        return False
+    return expires > time.time() and hmac.compare_digest(_session(cfg.get('session_secret', '00'), expires), cookie)
+
+
+def _is_local(request):
+    return request.client is not None and request.client.host in ('127.0.0.1', '::1')
+
+
+def _log_in(response, cfg):
+    expires = int(time.time()) + SESSION_S
+    response.set_cookie(COOKIE, _session(cfg['session_secret'], expires), max_age=SESSION_S,
+                        httponly=True, samesite='strict')
+
+
+@app.middleware('http')
+async def site_login(request: Request, call_next):
+    path = request.url.path
+    if path.startswith('/api/') and path not in OPEN_API:
+        cfg = config.load_config()
+        if not cfg.get('site_password'):
+            if not _is_local(request):
+                return JSONResponse({'detail': {'errors': ['local_only']}}, 403)
+        elif not _logged_in(cfg, request.cookies.get(COOKIE)):
+            return JSONResponse({'detail': {'errors': ['login_needed']}}, 401)
+    return await call_next(request)
+
+
+@app.get('/api/auth')
+def auth(request: Request):
+    cfg = config.load_config()
+    return {'password_set': bool(cfg.get('site_password')), 'local': _is_local(request),
+            'logged_in': _logged_in(cfg, request.cookies.get(COOKIE))}
+
+
+class Login(BaseModel):
+    password: str
+
+
+@app.post('/api/login')
+def login(body: Login, request: Request, response: Response):
+    """Wrong passwords are slowed down, and too many in a row make that device wait."""
+    who = request.client.host if request.client else '?'
+    now = time.time()
+    recent = _failures[who] = [t for t in _failures.get(who, []) if now - t < TRIES_WINDOW_S]
+    if len(recent) >= MAX_TRIES:
+        raise HTTPException(429, {'errors': ['too_many_tries']})
+    cfg = config.load_config()
+    if not cfg.get('site_password'):
+        raise HTTPException(409, {'errors': ['no_password']})
+    if not check_password(body.password, cfg['site_password']):
+        recent.append(now)
+        time.sleep(1)
+        raise HTTPException(401, {'errors': ['wrong_password']})
+    _failures.pop(who, None)
+    _log_in(response, cfg)
+    return {'ok': True}
+
+
+@app.post('/api/logout')
+def logout(response: Response):
+    response.delete_cookie(COOKIE)
+    return {'ok': True}
+
+
+class NewPassword(BaseModel):
+    current: str = ''
+    new: str
+
+
+@app.put('/api/password')
+def set_password(body: NewPassword, response: Response):
+    """Set the site password (first time: only from the gate computer, see site_login) or
+    change it (needs the current one). Every other device is logged out."""
+    cfg = config.load_config()
+    if cfg.get('site_password') and not check_password(body.current, cfg['site_password']):
+        time.sleep(1)
+        raise HTTPException(403, {'errors': ['wrong_password']})
+    if len(body.new) < 6:
+        raise HTTPException(422, {'errors': ['short_password']})
+    cfg.update(site_password=hash_password(body.new), session_secret=secrets.token_hex(32))
+    config.save_config(cfg)
+    _log_in(response, cfg)
+    return {'ok': True}
 
 
 @app.get('/api/health')
@@ -535,8 +653,8 @@ if WEB.is_dir():  # last, so /api/... routes win
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    # ponytail: localhost only until the site login exists (tasks/todo.md, Task 11)
-    ap.add_argument('--host', default='127.0.0.1')
+    # the whole network; until a site password is set, the API answers only this computer
+    ap.add_argument('--host', default='0.0.0.0')
     ap.add_argument('--port', type=int, default=8000)
     args = ap.parse_args()
     if not WEB.is_dir():

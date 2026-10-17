@@ -2,8 +2,8 @@ import { useState } from 'react'
 import {
   Alert, AspectRatio, Badge, Button, Card, Center, Group, Image, Paper, SimpleGrid, Stack, Text, Title,
 } from '@mantine/core'
-import { IconAlertTriangle, IconCameraOff, IconDownload, IconPlayerPlay, IconVideoPlus } from '@tabler/icons-react'
-import { api, type Truck, useLang, usePoll, useT } from '../api'
+import { IconAlertTriangle, IconCameraOff, IconDownload, IconLock, IconPlayerPlay, IconVideoPlus } from '@tabler/icons-react'
+import { api, type Auth, type Truck, useLang, usePoll, useT } from '../api'
 import DayStats from '../components/DayStats'
 import TruckTable, { Direction } from '../components/TruckTable'
 
@@ -17,6 +17,7 @@ export default function Live() {
   const t = useT()
   const lang = useLang()
   const status = usePoll<Status>('/api/status', 2000)
+  const auth = usePoll<Auth>('/api/auth', 60000).data
   const s = status.data
   const trucks = usePoll<Truck[]>(s ? `/api/records?day=${s.today}` : null, 2000)
   const [clickedAt, setClickedAt] = useState(0)  // shows "starting" until the server reports it
@@ -29,6 +30,14 @@ export default function Live() {
 
   return (
     <Stack gap="xl">
+      {auth && !auth.password_set && (
+        <Alert color="blue" icon={<IconLock />}>
+          <Group justify="space-between" gap="sm">
+            <Text size="sm">{t('no_password_banner')}</Text>
+            <Button component="a" href="#cameras" size="xs" variant="light">{t('choose_password')}</Button>
+          </Group>
+        </Alert>
+      )}
       {s.cameras.length === 0 ? (
         <Paper withBorder p="xl" radius="lg">
           <Stack align="center" gap="md">

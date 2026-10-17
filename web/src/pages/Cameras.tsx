@@ -4,9 +4,10 @@ import {
   SimpleGrid, Stack, Switch, Text, TextInput, Title, Tooltip,
 } from '@mantine/core'
 import { IconAlertTriangle, IconCheck, IconPlus, IconTrash } from '@tabler/icons-react'
-import { api, ApiError, send, useT } from '../api'
+import { api, ApiError, type Auth, send, useT } from '../api'
 import AddCamera from '../components/AddCamera'
 import HelpTip from '../components/HelpTip'
+import PasswordForm from '../components/PasswordForm'
 import { Direction } from '../components/TruckTable'
 
 export type Camera = {
@@ -25,8 +26,12 @@ export default function Cameras() {
   const [failed, setFailed] = useState(false)
   const [adding, setAdding] = useState(false)
   const [added, setAdded] = useState<string>()
+  const [auth, setAuth] = useState<Auth>()
 
-  useEffect(() => { api<Settings>('/api/settings').then(setSettings).catch(() => setFailed(true)) }, [])
+  useEffect(() => {
+    api<Settings>('/api/settings').then(setSettings).catch(() => setFailed(true))
+    api<Auth>('/api/auth').then(setAuth).catch(() => setFailed(true))
+  }, [])
 
   if (failed) return <Alert color="red" icon={<IconAlertTriangle />}>{t('server_down')}</Alert>
   if (!settings) return null
@@ -40,6 +45,17 @@ export default function Cameras() {
                    onSaved={(s, name) => { setSettings(s); setAdding(false); setAdded(name) }} />
       ) : (
         <Group><Button size="md" leftSection={<IconPlus size={18} />} onClick={() => { setAdded(undefined); setAdding(true) }}>{t('add_camera_btn')}</Button></Group>
+      )}
+      {auth && (
+        <Paper id="password" withBorder radius="lg" p="lg">
+          <Stack gap="md">
+            <div>
+              <Title order={3}>{t('site_password')}</Title>
+              <Text size="sm" c="dimmed">{t('site_password_help')}</Text>
+            </div>
+            <PasswordForm passwordSet={auth.password_set} onSaved={() => setAuth({ ...auth, password_set: true, logged_in: true })} />
+          </Stack>
+        </Paper>
       )}
     </Stack>
   )

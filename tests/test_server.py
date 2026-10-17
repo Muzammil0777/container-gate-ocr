@@ -14,12 +14,19 @@ import pytest
 from fastapi.testclient import TestClient
 
 import server
-from server import app, get_store
+from server import COOKIE, app, get_store
 from src import config
 from src.i18n import TEXT
 from src.store import Store
 
-client = TestClient(app)
+client = TestClient(app, client=('127.0.0.1', 50000))   # the gate computer itself
+
+
+@pytest.fixture(autouse=True)
+def no_real_settings(tmp_path, monkeypatch):
+    """Every test starts with its own empty settings file, never the real cameras.json."""
+    monkeypatch.setattr(config, 'CONFIG', tmp_path / 'settings' / 'cameras.json')
+    (tmp_path / 'settings').mkdir()
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -341,3 +348,58 @@ def test_every_web_text_exists_in_both_languages():
     assert len(used) > 50
     assert sorted(used - set(TEXT)) == []
     assert [k for k, (en, ar) in TEXT.items() if not en.strip() or not ar.strip()] == []
+
+
+def test_without_password_only_the_gate_computer_can_use_the_api():
+    phone = TestClient(app, client=('192.168.1.50', 40000))
+    assert phone.get('/api/settings').status_code == 403
+    assert phone.get('/api/settings').json()['detail'] == {'errors': ['local_only']}
+    assert phone.get('/api/text').status_code == 200                                     # still loads the page
+    assert phone.get('/api/auth').json() == {'password_set': False, 'local': False, 'logged_in': False}
+    assert phone.put('/api/password', json={'new': 'gate1234'}).status_code == 403       # can't claim the site
+    assert client.get('/api/settings').status_code == 200
+
+
+def test_site_password_and_login(monkeypatch):
+    monkeypatch.setattr(time, 'sleep', lambda s: None)
+    local = TestClient(app, client=('127.0.0.1', 50001))
+    assert local.put('/api/password', json={'new': '123'}).json()['detail'] == {'errors': ['short_password']}
+    assert local.put('/api/password', json={'new': 'gate1234'}).status_code == 200
+    stored = config.load_config()['site_password']
+    assert 'gate1234' not in stored and stored.startswith('pbkdf2_sha256$')
+    assert local.get('/api/settings').status_code == 200                                  # logged in by setting it
+
+    phone = TestClient(app, client=('192.168.1.50', 40000))
+    assert phone.get('/api/settings').status_code == 401
+    assert phone.post('/api/login', json={'password': 'nope'}).json()['detail'] == {'errors': ['wrong_password']}
+    assert phone.post('/api/login', json={'password': 'gate1234'}).status_code == 200
+    assert phone.get('/api/settings').status_code == 200
+    assert phone.get('/api/auth').json()['logged_in'] is True
+    phone.post('/api/logout')
+    assert phone.get('/api/settings').status_code == 401
+
+    assert phone.post('/api/login', json={'password': 'gate1234'}).status_code == 200
+    assert phone.put('/api/password', json={'current': 'wrong', 'new': 'gate5678'}).status_code == 403
+    assert phone.put('/api/password', json={'current': 'gate1234', 'new': 'gate5678'}).status_code == 200
+    assert local.get('/api/settings').status_code == 401                                  # others logged out
+    phone.cookies.set(COOKIE, 'x' * 10)
+    assert phone.get('/api/settings').status_code == 401
+
+
+def test_login_locks_out_after_many_wrong_tries(monkeypatch):
+    monkeypatch.setattr(time, 'sleep', lambda s: None)
+    monkeypatch.setattr(server, '_failures', {})
+    client.put('/api/password', json={'new': 'gate1234'})
+    phone = TestClient(app, client=('192.168.1.77', 40000))
+    for _ in range(server.MAX_TRIES):
+        assert phone.post('/api/login', json={'password': 'guess'}).status_code == 401
+    r = phone.post('/api/login', json={'password': 'gate1234'})                              # even the right one
+    assert r.status_code == 429 and r.json()['detail'] == {'errors': ['too_many_tries']}
+    other = TestClient(app, client=('192.168.1.78', 40000))
+    assert other.post('/api/login', json={'password': 'gate1234'}).status_code == 200      # other devices unaffected
+
+
+def test_password_hash_roundtrip():
+    h = server.hash_password('Secret 123')
+    assert server.check_password('Secret 123', h) and not server.check_password('secret 123', h)
+    assert not server.check_password('x', '') and not server.check_password('x', 'garbage')

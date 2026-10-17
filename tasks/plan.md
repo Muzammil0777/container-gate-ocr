@@ -66,7 +66,7 @@ Details, acceptance criteria and checks per task: [todo.md](todo.md).
 
 ### Phase 4: Made for non-technical users, and roll-out
 - [x] Task 10: First-run setup wizard and plain-language help
-- [ ] Task 11: Site login (one password per site)
+- [x] Task 11: Site login (one password per site)
 - [ ] Task 12: Switch launchers to the new app, update README, remove Streamlit
 
 ### Checkpoint: Complete
@@ -78,7 +78,7 @@ Details, acceptance criteria and checks per task: [todo.md](todo.md).
 |------|--------|------------|
 | onnxruntime DLL clash on Windows (already seen with pandas) also happens under uvicorn | High | Task 2 imports `src.recognizer` first, same as app.py, and checks it on this laptop before anything else is built |
 | Built React files go stale vs. source | Med | `npm run build` in the release step; README says so; CI check optional later |
-| Opening the app to the network exposes NVR password and settings to anyone on the LAN | High | Task 11 (login). Until then, server binds to localhost only by default |
+| Opening the app to the network exposes NVR password and settings to anyone on the LAN | High | Task 11: site password; until one is set, the API answers only the gate computer |
 | Excel/ZIP of a busy month is large or slow | Low | Built on request only (same as today) |
 | Two UIs writing cameras.json during switch-over | Low | Both use the same atomic `save_config` from `src/config.py` |
 

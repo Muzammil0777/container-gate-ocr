@@ -203,19 +203,22 @@ Every empty state says what to do next in one sentence. Help icons explain terms
 **Files:** `web/src/pages/Setup.tsx`, `web/src/components/HelpTip.tsx`, `web/src/components/AddCamera.tsx`, `web/src/pages/Cameras.tsx`, `web/src/components/TruckTable.tsx`, `web/src/api.ts`, `web/src/App.tsx`, `web/src/pages/Live.tsx`, `src/i18n.py`, `tests/test_server.py`
 **Scope:** M
 
-### Task 11: Site login (one password per site)
-**Description:** A site password set in the wizard (stored hashed in `cameras.json`). All
-`/api/*` except login need a session cookie. Server binds to localhost until a password is
-set, then to the network so other devices can open it.
+### Task 11: Site login (one password per site) ✅
+**Description:** A site password chosen in the setup wizard (first step) or on the Cameras
+page, stored as a salted PBKDF2 hash in `cameras.json`. All `/api/*` except health, text, auth
+and login need a signed session cookie (30 days, HttpOnly, SameSite=Strict); changing the
+password logs every other device out. The server listens on the network, but until a password
+is set the API answers only the gate computer itself (instead of binding to localhost, so no
+restart is needed after setting it). Sign out in the header.
 
 **Acceptance criteria:**
-- [ ] Without login, API returns 401 and the app shows the login screen
-- [ ] Wrong password → message, with a short delay after repeated tries
-- [ ] Password is never stored in plain text
+- [x] Without login, API returns 401 and the app shows the login screen
+- [x] Wrong password → message, with a short delay after repeated tries
+- [x] Password is never stored in plain text
 
-**Verification:** Tests: 401 without cookie, 200 with, hash stored.
+**Verification:** API tests (other devices refused until a password exists and can't set it; set/login/logout/change; others logged out on change; forged cookie; lockout after 10 wrong tries per device; hash roundtrip); in the browser on a test copy: banner on Live, another device (LAN address) sees the "gate computer only" screen, password set (mismatch caught), sign out/in with wrong and right password, cookie not readable by scripts, the other device then signs in and uses the app. The wizard's password step was not clicked through in the browser (same form as the Cameras page).
 **Dependencies:** Task 10
-**Files:** `server.py`, `src/config.py`, `web/src/pages/Login.tsx`, `tests/test_server.py`
+**Files:** `server.py`, `web/src/pages/Login.tsx`, `web/src/components/PasswordForm.tsx`, `web/src/App.tsx`, `web/src/api.ts`, `web/src/pages/Setup.tsx`, `web/src/pages/Cameras.tsx`, `web/src/pages/Live.tsx`, `src/i18n.py`, `tests/test_server.py`
 **Scope:** M
 
 ### Task 12: Switch launchers, update README, remove Streamlit

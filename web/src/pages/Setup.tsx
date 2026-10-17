@@ -3,12 +3,13 @@ import {
   Alert, AspectRatio, Button, Card, Center, Group, Image, Loader, Paper, SimpleGrid, Stack, Stepper, Text,
 } from '@mantine/core'
 import { IconAlertTriangle, IconCameraOff, IconCheck, IconCircleCheck } from '@tabler/icons-react'
-import { api, ApiError, cameraPicture, useT } from '../api'
+import { api, ApiError, type Auth, cameraPicture, useT } from '../api'
 import AddCamera from '../components/AddCamera'
+import PasswordForm from '../components/PasswordForm'
 import { RecorderForm, type Settings } from './Cameras'
 
-/** First-run setup: 1) connect to the recorder, 2) tap the camera that sees the gate and mark
- *  where trucks pass, 3) done. */
+/** First-run setup: 1) choose the site password, 2) connect to the recorder, 3) tap the camera
+ *  that sees the gate and mark where trucks pass, 4) done. */
 export default function Setup() {
   const t = useT()
   const [settings, setSettings] = useState<Settings>()
@@ -17,8 +18,8 @@ export default function Setup() {
   const [chosen, setChosen] = useState<{ channel: number; picture: string }>()
 
   useEffect(() => {
-    api<Settings>('/api/settings')
-      .then((s) => { setSettings(s); if (s.nvr.ip) setStep(1) })
+    Promise.all([api<Auth>('/api/auth'), api<Settings>('/api/settings')])
+      .then(([a, s]) => { setSettings(s); setStep(!a.password_set ? 0 : !s.nvr.ip ? 1 : 2) })
       .catch(() => setFailed(true))
   }, [])
 
@@ -27,15 +28,23 @@ export default function Setup() {
   return (
     <Stack gap="xl">
       <Stepper active={step} onStepClick={(s) => s < step && setStep(s)} size="sm">
+        <Stepper.Step label={t('step_password')} description={t('step_password_help')}>
+          <Paper withBorder radius="lg" p="lg">
+            <Stack gap="md">
+              <Text>{t('site_password_help')}</Text>
+              <PasswordForm passwordSet={false} onSaved={() => setStep(1)} />
+            </Stack>
+          </Paper>
+        </Stepper.Step>
         <Stepper.Step label={t('step_recorder')} description={t('step_recorder_help')}>
-          <RecorderForm settings={settings} onSaved={(s) => { setSettings(s); if (s.nvr.ip) setStep(1) }} />
+          <RecorderForm settings={settings} onSaved={(s) => { setSettings(s); if (s.nvr.ip) setStep(2) }} />
         </Stepper.Step>
         <Stepper.Step label={t('step_camera')} description={t('step_camera_help')}>
           <Stack gap="md">
             <Alert color="teal" icon={<IconCheck />}>{t('connected')}</Alert>
             {chosen ? (
               <AddCamera settings={settings} initial={chosen} onCancel={() => setChosen(undefined)}
-                         onSaved={(s) => { setSettings(s); setStep(2) }} />
+                         onSaved={(s) => { setSettings(s); setStep(3) }} />
             ) : (
               <ChannelPicker onPick={setChosen} />
             )}
@@ -49,13 +58,13 @@ export default function Setup() {
               <Text c="dimmed" ta="center" maw={520}>{t('setup_done_help')}</Text>
               <Group>
                 <Button component="a" href="#live" size="md">{t('open_live')}</Button>
-                <Button variant="default" size="md" onClick={() => { setChosen(undefined); setStep(1) }}>{t('add_another')}</Button>
+                <Button variant="default" size="md" onClick={() => { setChosen(undefined); setStep(2) }}>{t('add_another')}</Button>
               </Group>
             </Stack>
           </Paper>
         </Stepper.Step>
       </Stepper>
-      {step < 2 && (
+      {step > 0 && step < 3 && (
         <Group>
           <Button variant="subtle" color="gray" onClick={() => { skipSetup(); location.hash = '#live' }}>{t('skip_setup')}</Button>
         </Group>

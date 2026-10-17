@@ -308,6 +308,32 @@ TEXT = {
                   'المنطقة الأصغر تُقرأ أسرع وأدق.'),
     'help_nvr': ('The recorder (NVR) is the box all the cameras are plugged into. This app gets the camera pictures from it.',
                  'جهاز التسجيل (NVR) هو الجهاز الذي تتصل به جميع الكاميرات. يحصل هذا التطبيق على صور الكاميرات منه.'),
+    # Web app: site login
+    'sign_in': ('Sign in', 'تسجيل الدخول'),
+    'sign_in_help': ('Enter the site password to open the gate app.', 'أدخل كلمة مرور الموقع لفتح تطبيق البوابة.'),
+    'sign_out': ('Sign out', 'تسجيل الخروج'),
+    'site_password': ('Site password', 'كلمة مرور الموقع'),
+    'site_password_help': ('Other computers and phones on the network can open this app only with this password.',
+                           'لا يمكن للأجهزة والهواتف الأخرى على الشبكة فتح هذا التطبيق إلا بكلمة المرور هذه.'),
+    'current_password': ('Current password', 'كلمة المرور الحالية'),
+    'new_password': ('New password', 'كلمة المرور الجديدة'),
+    'repeat_password': ('Type it again', 'أعد كتابتها'),
+    'passwords_differ': ('The two passwords are not the same.', 'كلمتا المرور غير متطابقتين.'),
+    'save_password': ('Save password', 'حفظ كلمة المرور'),
+    'password_saved': ('Password saved. Other devices must sign in again.', 'تم حفظ كلمة المرور. يجب على الأجهزة الأخرى تسجيل الدخول مرة أخرى.'),
+    'wrong_password': ('Wrong password.', 'كلمة المرور غير صحيحة.'),
+    'too_many_tries': ('Too many wrong tries. Wait 5 minutes, then try again.', 'محاولات خاطئة كثيرة. انتظر 5 دقائق ثم حاول مرة أخرى.'),
+    'short_password': ('Use at least 6 characters.', 'استخدم 6 أحرف على الأقل.'),
+    'login_needed': ('Please sign in again.', 'يرجى تسجيل الدخول مرة أخرى.'),
+    'no_password': ('No site password has been chosen yet.', 'لم يتم اختيار كلمة مرور للموقع بعد.'),
+    'local_only': ('This gate app has no password yet, so it opens only on the gate computer. '
+                   'Open it there and choose a site password first.',
+                   'لا توجد كلمة مرور لتطبيق البوابة بعد، لذلك يفتح فقط على جهاز البوابة. افتحه هناك واختر كلمة مرور للموقع أولاً.'),
+    'no_password_banner': ('Only this computer can open the app until you choose a site password.',
+                           'لا يمكن فتح التطبيق إلا من هذا الجهاز حتى تختار كلمة مرور للموقع.'),
+    'choose_password': ('Choose a password', 'اختيار كلمة مرور'),
+    'step_password': ('Password', 'كلمة المرور'),
+    'step_password_help': ('Protect this site', 'حماية هذا الموقع'),
 }
 
 

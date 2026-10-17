@@ -8,9 +8,13 @@ export class ApiError extends Error {
 /** JSON from the gate server (server.py); throws on a network error or an ApiError. */
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init)
+  if (res.status === 401 && path !== '/api/login') dispatchEvent(new Event('gate-auth'))  // signed out: App shows Login
   if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null))
   return res.json()
 }
+
+/** /api/auth: is a site password set, is this the gate computer, is this device signed in. */
+export type Auth = { password_set: boolean; local: boolean; logged_in: boolean }
 
 /** The current picture of an NVR channel, as an object URL (throws ApiError with a text key). */
 export async function cameraPicture(channel: number): Promise<string> {
