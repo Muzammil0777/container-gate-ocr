@@ -1,32 +1,32 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   Alert, Button, Group, NumberInput, Paper, SegmentedControl, SimpleGrid, Stack, Text, TextInput, Title,
 } from '@mantine/core'
 import { IconAlertTriangle, IconPhoto, IconScan } from '@tabler/icons-react'
-import { ApiError, send, useT } from '../api'
+import { ApiError, cameraPicture, send, useT } from '../api'
 import type { Settings } from '../pages/Cameras'
 import AreaPicker from './AreaPicker'
+import HelpTip from './HelpTip'
 import OcrResultView, { type OcrResult } from './OcrResult'
 
 /** Form for a new camera: name, recorder channel, in/out, location, and a reading area drawn
  *  on the camera's current picture, with a test read of that area. */
-export default function AddCamera({ settings, onSaved, onCancel }: {
+export default function AddCamera({ settings, onSaved, onCancel, initial }: {
   settings: Settings; onSaved: (s: Settings, name: string) => void; onCancel: () => void
+  initial?: { channel: number; picture: string }  // already chosen (setup wizard)
 }) {
   const t = useT()
   const [name, setName] = useState('')
-  const [channel, setChannel] = useState<number | string>(1)
+  const [channel, setChannel] = useState<number | string>(initial?.channel ?? 1)
   const [direction, setDirection] = useState<'IN' | 'OUT'>('IN')
   const [location, setLocation] = useState('')
   const [roi, setRoi] = useState<number[] | null>(null)
-  const [picture, setPicture] = useState<string>()
+  const [picture, setPicture] = useState(initial?.picture)
   const [result, setResult] = useState<OcrResult>()
   const [busy, setBusy] = useState<'picture' | 'test' | 'save'>()
   const [problem, setProblem] = useState<string>()
   const hasRecorder = !!settings.nvr.ip
 
-  useEffect(() => { setPicture(undefined); setResult(undefined) }, [channel])  // another camera's picture
-  useEffect(() => () => { if (picture) URL.revokeObjectURL(picture) }, [picture])
 
   const explain = (e: unknown) => {
     const key = e instanceof ApiError ? e.body?.detail?.errors?.[0] : undefined
@@ -37,13 +37,7 @@ export default function AddCamera({ settings, onSaved, onCancel }: {
     try { await job() } catch (e) { explain(e) } finally { setBusy(undefined) }
   }
 
-  const getPicture = () => run('picture', async () => {
-    const res = await fetch('/api/cameras/frame', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel: Number(channel) }),
-    })
-    if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null))
-    setPicture(URL.createObjectURL(await res.blob()))
-  })
+  const getPicture = () => run('picture', async () => setPicture(await cameraPicture(Number(channel))))
   const test = () => run('test', async () => {
     setResult(await send<OcrResult>('POST', '/api/cameras/test', { channel: Number(channel), roi }))
   })
@@ -60,7 +54,8 @@ export default function AddCamera({ settings, onSaved, onCancel }: {
           <SimpleGrid cols={{ base: 1, sm: 2 }}>
             <TextInput label={t('camera_name')} placeholder="Gate 1 Entry" value={name} size="md" required
                        onChange={(e) => setName(e.currentTarget.value)} />
-            <NumberInput label={t('nvr_channel')} description={t('channel_help')} value={channel} onChange={setChannel}
+            <NumberInput label={t('nvr_channel')} description={t('channel_help')} value={channel}
+                         onChange={(v) => { setChannel(v); setPicture(undefined); setResult(undefined) }}
                          min={1} max={64} size="md" allowDecimal={false} />
             <div>
               <Text size="sm" fw={500}>{t('direction')}</Text>
@@ -73,7 +68,7 @@ export default function AddCamera({ settings, onSaved, onCancel }: {
           </SimpleGrid>
 
           <Stack gap="xs">
-            <Text fw={600}>{t('reading_area')}</Text>
+            <Group gap={6}><Text fw={600}>{t('reading_area')}</Text><HelpTip text={t('help_area')} /></Group>
             <Text size="sm" c="dimmed">{t('area_help')}</Text>
             {!hasRecorder && <Alert color="blue">{t('no_nvr')}</Alert>}
             <Group>

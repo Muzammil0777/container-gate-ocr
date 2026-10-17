@@ -6,6 +6,7 @@ import {
 import { IconAlertTriangle, IconCheck, IconPlus, IconTrash } from '@tabler/icons-react'
 import { api, ApiError, send, useT } from '../api'
 import AddCamera from '../components/AddCamera'
+import HelpTip from '../components/HelpTip'
 import { Direction } from '../components/TruckTable'
 
 export type Camera = {
@@ -44,7 +45,7 @@ export default function Cameras() {
   )
 }
 
-function RecorderForm({ settings, onSaved }: { settings: Settings; onSaved: (s: Settings) => void }) {
+export function RecorderForm({ settings, onSaved }: { settings: Settings; onSaved: (s: Settings) => void }) {
   const t = useT()
   const [ip, setIp] = useState(settings.nvr.ip)
   const [user, setUser] = useState(settings.nvr.user)
@@ -73,7 +74,7 @@ function RecorderForm({ settings, onSaved }: { settings: Settings; onSaved: (s: 
       <form onSubmit={(e) => { e.preventDefault(); save() }}>
         <Stack gap="md">
           <div>
-            <Title order={3}>{t('nvr_settings')}</Title>
+            <Group gap={6}><Title order={3}>{t('nvr_settings')}</Title><HelpTip text={t('help_nvr')} /></Group>
             <Text size="sm" c="dimmed">{t('recorder_help')}</Text>
           </div>
           <SimpleGrid cols={{ base: 1, sm: 2 }}>

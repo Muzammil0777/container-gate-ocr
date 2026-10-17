@@ -65,7 +65,7 @@ Details, acceptance criteria and checks per task: [todo.md](todo.md).
 - [x] Everything the Streamlit app does can be done in the React app
 
 ### Phase 4: Made for non-technical users, and roll-out
-- [ ] Task 10: First-run setup wizard and plain-language help
+- [x] Task 10: First-run setup wizard and plain-language help
 - [ ] Task 11: Site login (one password per site)
 - [ ] Task 12: Switch launchers to the new app, update README, remove Streamlit
 

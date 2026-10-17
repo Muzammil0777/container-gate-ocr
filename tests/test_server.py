@@ -1,6 +1,7 @@
 """The web API (server.py), through FastAPI's test client."""
 import io
 import json
+import re
 import tempfile
 import time
 import zipfile
@@ -330,3 +331,13 @@ def test_video_job_bad_input():
     assert _wait(r.json()['job'])['error'] == 'bad_video'
     assert client.post('/api/video', files={'file': ('x.mp4', b'x', 'video/mp4')}, data={'fps': '50'}).status_code == 422
     assert client.get('/api/video/nope').status_code == 404
+
+
+def test_every_web_text_exists_in_both_languages():
+    """Every t('key') in the React app has English and Arabic text (a typo would show the raw key)."""
+    used = set()
+    for f in (ROOT / 'web' / 'src').rglob('*.tsx'):
+        used |= set(re.findall(r"""\bt\(\s*'([a-z0-9_]+)'""", f.read_text(encoding='utf-8')))
+    assert len(used) > 50
+    assert sorted(used - set(TEXT)) == []
+    assert [k for k, (en, ar) in TEXT.items() if not en.strip() or not ar.strip()] == []

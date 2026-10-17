@@ -273,6 +273,41 @@ TEXT = {
     'fps_help': ('More looks find more trucks but take longer.', 'المزيد من القراءات يجد شاحنات أكثر لكنه يستغرق وقتاً أطول.'),
     'min_hits_help': ('How many times a plate or container must be read before it counts.',
                       'عدد مرات قراءة اللوحة أو الحاوية قبل اعتمادها.'),
+    # Web app: setup wizard and help
+    'nav_setup': ('Set up the gate', 'إعداد البوابة'),
+    'nav_setup_help': ('Three short steps, and the gate starts logging trucks.', 'ثلاث خطوات قصيرة، وتبدأ البوابة بتسجيل الشاحنات.'),
+    'step_recorder': ('Recorder', 'جهاز التسجيل'),
+    'step_recorder_help': ('Connect to the camera recorder', 'الاتصال بجهاز تسجيل الكاميرات'),
+    'step_camera': ('Gate camera', 'كاميرا البوابة'),
+    'step_camera_help': ('Choose the camera that sees the trucks', 'اختر الكاميرا التي ترى الشاحنات'),
+    'step_done': ('Done', 'تم'),
+    'step_done_help': ('Start logging', 'بدء التسجيل'),
+    'connected': ('Connected to the recorder.', 'تم الاتصال بجهاز التسجيل.'),
+    'next': ('Next', 'التالي'),
+    'back': ('Back', 'رجوع'),
+    'skip_setup': ('Skip for now', 'تخطي الآن'),
+    'pick_channel': ('Which picture shows the gate? Tap it.', 'أي صورة تُظهر البوابة؟ اضغط عليها.'),
+    'more_channels': ('Show more cameras', 'عرض المزيد من الكاميرات'),
+    'setup_done': ('All set! The gate is ready to log trucks.', 'تم! البوابة جاهزة لتسجيل الشاحنات.'),
+    'setup_done_help': ('Open Live to watch the camera. Every truck that passes appears there, and in the Excel file.',
+                        'افتح صفحة البث المباشر لمشاهدة الكاميرا. تظهر هناك كل شاحنة تمر، وفي ملف Excel أيضاً.'),
+    'open_live': ('Open Live', 'فتح البث المباشر'),
+    'add_another': ('Add another camera', 'إضافة كاميرا أخرى'),
+    'help': ('What does this mean?', 'ماذا يعني هذا؟'),
+    'help_check': ('"Check" means the reading may be wrong: the plate was not confirmed by its Arabic letters, or the '
+                   'container number did not pass its check digit. Open the truck in Records to compare it with the photo.',
+                   '"راجع" تعني أن القراءة قد تكون خاطئة: لم تؤكد الحروف العربية اللوحة، أو لم يطابق رقم الحاوية رقم التحقق. '
+                   'افتح الشاحنة في السجلات لمقارنتها بالصورة.'),
+    'help_check_digit': ('The last digit of a container number is a check digit, calculated from the other digits. '
+                         'A misread number almost always fails it, so a green tick means the number is right.',
+                         'الرقم الأخير في رقم الحاوية هو رقم التحقق، ويُحسب من باقي الأرقام. القراءة الخاطئة لا تطابقه '
+                         'غالباً، لذا تعني العلامة الخضراء أن الرقم صحيح.'),
+    'help_area': ('Only this part of the picture is read. Mark the spot where trucks pass close to the camera; '
+                  'a smaller area is read faster and more accurately.',
+                  'تتم قراءة هذا الجزء فقط من الصورة. حدد المكان الذي تمر فيه الشاحنات قريبة من الكاميرا؛ '
+                  'المنطقة الأصغر تُقرأ أسرع وأدق.'),
+    'help_nvr': ('The recorder (NVR) is the box all the cameras are plugged into. This app gets the camera pictures from it.',
+                 'جهاز التسجيل (NVR) هو الجهاز الذي تتصل به جميع الكاميرات. يحصل هذا التطبيق على صور الكاميرات منه.'),
 }
 
 

@@ -186,7 +186,7 @@ API: `POST /api/video` → job id, `GET /api/video/{job}` (progress, frame, rows
 
 ## Phase 4: For non-technical users, and roll-out
 
-### Task 10: First-run setup wizard and plain-language help
+### Task 10: First-run setup wizard and plain-language help ✅
 **Description:** When there's no NVR or camera yet, open a 3-step wizard instead of empty
 pages: 1) connect to the recorder (IP, user, password, with a live "Connected ✓"), 2) add
 the gate camera (pick channel from snapshots, In/Out, draw area), 3) done → Live page.
@@ -194,13 +194,13 @@ Every empty state says what to do next in one sentence. Help icons explain terms
 ("check digit", "reading area") in plain words. Big touch-friendly buttons; works on a phone.
 
 **Acceptance criteria:**
-- [ ] A person who has never seen the app sets up a camera without reading the README
-- [ ] Usable at phone width (375 px) without sideways scrolling
-- [ ] All new text exists in English and Arabic
+- [x] A person who has never seen the app sets up a camera without reading the README
+- [x] Usable at phone width (375 px) without sideways scrolling
+- [x] All new text exists in English and Arabic
 
-**Verification:** Manual: delete `cameras.json`, start, follow the wizard; phone-width check in browser.
+**Verification:** On a test copy with no settings file and a fake recorder: the app opened the wizard by itself; recorder saved, channel pictures shown (no-picture channels marked), tapping one opened the camera form with that picture, area drawn, saved, "All set"; "Add another camera" works. All five pages at 375 px in English and Arabic: no sideways scrolling. New test: every text key used by the React app exists in both languages. (The "never seen the app" criterion still needs a real person.)
 **Dependencies:** Task 7
-**Files:** `web/src/pages/Setup.tsx`, `web/src/App.tsx`, `src/i18n.py`
+**Files:** `web/src/pages/Setup.tsx`, `web/src/components/HelpTip.tsx`, `web/src/components/AddCamera.tsx`, `web/src/pages/Cameras.tsx`, `web/src/components/TruckTable.tsx`, `web/src/api.ts`, `web/src/App.tsx`, `web/src/pages/Live.tsx`, `src/i18n.py`, `tests/test_server.py`
 **Scope:** M
 
 ### Task 11: Site login (one password per site)

@@ -34,7 +34,7 @@ export default function Live() {
           <Stack align="center" gap="md">
             <IconVideoPlus size={48} stroke={1.4} color="var(--mantine-color-dimmed)" />
             <Text ta="center">{t('web_no_cameras')}</Text>
-            <Button component="a" href="#cameras" size="md">{t('go_cameras')}</Button>
+            <Button component="a" href="#setup" size="md">{t('go_cameras')}</Button>
           </Stack>
         </Paper>
       ) : !s.running && (

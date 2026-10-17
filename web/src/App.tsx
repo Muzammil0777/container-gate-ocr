@@ -6,9 +6,11 @@ import {
 import { useDisclosure } from '@mantine/hooks'
 import { IconCamera, IconClipboardList, IconFlask, IconTruck, IconVideo } from '@tabler/icons-react'
 import { api, type Lang, TextContext, type TextTable, useT } from './api'
+import type { Settings } from './pages/Cameras'
 import Cameras from './pages/Cameras'
 import Live from './pages/Live'
 import Records from './pages/Records'
+import Setup, { setupSkipped } from './pages/Setup'
 import Test from './pages/Test'
 
 const PAGES = [
@@ -17,9 +19,10 @@ const PAGES = [
   { key: 'cameras', icon: IconCamera },
   { key: 'test', icon: IconFlask },
 ] as const
-type Page = (typeof PAGES)[number]['key']
+type Page = (typeof PAGES)[number]['key'] | 'setup'  // setup: not in the menu, opened on first run
 
-const pageFromHash = (): Page => PAGES.find((p) => `#${p.key}` === location.hash)?.key ?? 'live'
+const pageFromHash = (): Page =>
+  location.hash === '#setup' ? 'setup' : PAGES.find((p) => `#${p.key}` === location.hash)?.key ?? 'live'
 
 function savedLang(): Lang {
   try {
@@ -80,6 +83,13 @@ function Shell({ lang, setLang, languages }: { lang: Lang; setLang: (l: Lang) =>
 
   useEffect(() => { document.title = `${t(`nav_${page}`)} · ${t('app_name')}` }, [page, t])
 
+  useEffect(() => {  // a fresh install (no recorder, no camera) opens the setup wizard
+    if (location.hash || setupSkipped()) return
+    api<Settings>('/api/settings')
+      .then((s) => { if (!s.nvr.ip && s.cameras.length === 0) location.hash = '#setup' })
+      .catch(() => {})
+  }, [])
+
   return (
     <AppShell
       header={{ height: 64 }}
@@ -126,7 +136,7 @@ function Shell({ lang, setLang, languages }: { lang: Lang; setLang: (l: Lang) =>
           <Title order={2}>{t(`nav_${page}`)}</Title>
           <Text c="dimmed">{t(`nav_${page}_help`)}</Text>
         </Stack>
-        {page === 'live' ? <Live /> : page === 'records' ? <Records /> : page === 'cameras' ? <Cameras /> : page === 'test' ? <Test /> : (
+        {page === 'live' ? <Live /> : page === 'records' ? <Records /> : page === 'cameras' ? <Cameras /> : page === 'test' ? <Test /> : page === 'setup' ? <Setup /> : (
           <Paper withBorder p="xl" radius="lg">
             <Text c="dimmed">{t('coming_soon')}</Text>
           </Paper>

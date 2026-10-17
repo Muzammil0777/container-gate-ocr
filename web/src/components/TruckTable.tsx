@@ -1,6 +1,7 @@
 import { Badge, Group, Stack, Table, Text, Tooltip } from '@mantine/core'
 import { IconAlertTriangle, IconCircleCheck, IconLogin, IconLogout, IconPencil } from '@tabler/icons-react'
 import { type Truck, useT } from '../api'
+import HelpTip from './HelpTip'
 
 /** Trucks as a table; `onPick` makes rows clickable (Records page). */
 export default function TruckTable({ rows, onPick, picked }: { rows: Truck[]; onPick?: (r: Truck) => void; picked?: number }) {
@@ -10,7 +11,15 @@ export default function TruckTable({ rows, onPick, picked }: { rows: Truck[]; on
       <Table highlightOnHover={!!onPick} verticalSpacing="sm" striped>
         <Table.Thead>
           <Table.Tr>
-            {['time', 'direction', 'plate', 'container', 'camera', 'col_status'].map((k) => <Table.Th key={k}>{t(k)}</Table.Th>)}
+            {['time', 'direction', 'plate', 'container', 'camera', 'col_status'].map((k) => (
+              <Table.Th key={k}>
+                <Group gap={4} wrap="nowrap">
+                  {t(k)}
+                  {k === 'container' && <HelpTip text={t('help_check_digit')} />}
+                  {k === 'col_status' && <HelpTip text={t('help_check')} />}
+                </Group>
+              </Table.Th>
+            ))}
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>

@@ -12,6 +12,15 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json()
 }
 
+/** The current picture of an NVR channel, as an object URL (throws ApiError with a text key). */
+export async function cameraPicture(channel: number): Promise<string> {
+  const res = await fetch('/api/cameras/frame', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel }),
+  })
+  if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null))
+  return URL.createObjectURL(await res.blob())
+}
+
 /** Send JSON with `method` (PATCH, POST, ...). */
 export const send = <T>(method: string, path: string, body: unknown) =>
   api<T>(path, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
