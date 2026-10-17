@@ -56,7 +56,7 @@ Details, acceptance criteria and checks per task: [todo.md](todo.md).
 - [ ] A correction made in React shows in the Excel file and in the Streamlit app
 
 ### Phase 3: Setup and testing
-- [ ] Task 6: Cameras page: NVR login, camera list
+- [x] Task 6: Cameras page: NVR login, camera list
 - [ ] Task 7: Add camera: draw the reading area on a picture, test the camera
 - [ ] Task 8: Test page: photos and stream URL
 - [ ] Task 9: Test page: video file as a background job

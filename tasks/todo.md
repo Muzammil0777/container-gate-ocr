@@ -112,18 +112,18 @@ API: `PATCH /api/records/{id}`, `GET /api/excel/month/{month}`, `GET /api/zip/da
 
 ## Phase 3: Setup and testing
 
-### Task 6: Cameras page: NVR login, camera list
+### Task 6: Cameras page: NVR login, camera list ✅
 **Description:** NVR address, user, password, port and Excel language form; Save checks the
 NVR is reachable first. List of cameras as cards: name, channel, In/Out, location, on/off
 switch, delete (with "Are you sure?"). Password is never sent back to the browser (shown as ••••).
 API: `GET/PUT /api/settings`, `PATCH/DELETE /api/cameras/{name}`.
 
 **Acceptance criteria:**
-- [ ] Unreachable NVR → "Can't reach 192.168.1.64. Check the cable." and nothing saved
-- [ ] `GET /api/settings` never contains the password; leaving it blank keeps the old one
-- [ ] Switching a camera off stops it in `cctv.py` within a few seconds
+- [x] Unreachable NVR → "Can't reach 192.168.1.64. Check the cable." and nothing saved
+- [x] `GET /api/settings` never contains the password; leaving it blank keeps the old one
+- [x] Switching a camera off stops it in `cctv.py` within a few seconds
 
-**Verification:** Tests for settings (password hidden, blank keeps old), camera toggle/delete.
+**Verification:** API tests (password never returned, blank keeps it, unreachable refused, bad port, camera secrets in rtsp:// sources hidden, toggle/delete, unknown camera); in the browser on a test copy: unreachable and reachable recorder, switching a camera off stopped it in the running service within seconds, delete with confirmation, Arabic layout.
 **Dependencies:** Task 2
 **Files:** `server.py`, `web/src/pages/Cameras.tsx`, `tests/test_server.py`
 **Scope:** M

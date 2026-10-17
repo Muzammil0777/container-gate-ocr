@@ -206,6 +206,21 @@ TEXT = {
     'dl_month_excel': ('Excel for the whole month', 'ملف Excel للشهر كاملاً'),
     'dl_zip_help': ('The ZIP has the Excel file and every photo, so the links work on any computer.',
                     'يحتوي ملف ZIP على ملف Excel وجميع الصور، لتعمل الروابط على أي جهاز.'),
+    # Web app: Cameras
+    'recorder_help': ('The box the cameras are plugged into. Its address and login are usually on a label or in its manual.',
+                      'الجهاز الذي تتصل به الكاميرات. عنوانه وبيانات الدخول مكتوبة عادةً على ملصق أو في دليله.'),
+    'password_keep': ('A password is saved. Leave empty to keep it.', 'كلمة المرور محفوظة. اتركها فارغة للإبقاء عليها.'),
+    'excel_lang_help': ('Language of the column titles in the Excel files.', 'لغة عناوين الأعمدة في ملفات Excel.'),
+    'save_settings': ('Save', 'حفظ'),
+    'no_cameras_list': ('No cameras yet.', 'لا توجد كاميرات بعد.'),
+    'channel_n': ('Channel {n}', 'القناة {n}'),
+    'own_source': ('Own video source', 'مصدر فيديو خاص'),
+    'reading_area_set': ('Reading area set', 'تم تحديد منطقة القراءة'),
+    'camera_on': ('On', 'تعمل'),
+    'camera_off': ('Off', 'متوقفة'),
+    'delete_confirm': ('Delete "{name}"? Trucks it already logged stay in the records.',
+                       'حذف "{name}"؟ تبقى الشاحنات التي سجلتها في السجلات.'),
+    'delete_yes': ('Delete', 'حذف'),
 }
 
 

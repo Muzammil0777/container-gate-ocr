@@ -20,9 +20,10 @@ from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi import Path as PathParam
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from cctv import DEFAULTS, _safe
+from src.camera import port_open, redact
 from src.i18n import LANGUAGES, TEXT
 from src.store import Store, needs_review, parse_fix, to_excel, to_zip
 
@@ -90,6 +91,75 @@ def live_picture(name: str):
     if name not in {c['name'] for c in _enabled_cameras()} or not path.is_file():
         raise HTTPException(404)
     return FileResponse(path, headers={'Cache-Control': 'no-store'})
+
+
+class Settings(BaseModel):
+    ip: str = ''
+    user: str = 'admin'
+    password: str = ''              # empty: keep the saved password
+    port: int = Field(554, ge=1, le=65535)
+    language: Literal['en', 'ar'] = 'en'
+
+
+@app.get('/api/settings')
+def get_settings():
+    """NVR login (never the password, only whether one is saved), Excel language and cameras."""
+    cfg = config.load_config()
+    nvr = cfg.get('nvr', {})
+    return {'nvr': {'ip': nvr.get('ip', ''), 'user': nvr.get('user', 'admin'), 'port': nvr.get('port', 554),
+                    'has_password': bool(nvr.get('password'))},
+            'language': cfg.get('language', 'en'), 'cameras': [_safe_camera(c) for c in cfg.get('cameras', [])]}
+
+
+def _safe_camera(cam):
+    """A camera entry without secrets: its own password, or one inside an rtsp:// source URL."""
+    cam = {k: v for k, v in cam.items() if k != 'password'}
+    if 'source' in cam:
+        cam['source'] = redact(cam['source'])
+    return cam
+
+
+@app.put('/api/settings')
+def put_settings(new: Settings):
+    """Save the NVR login and Excel language. An NVR address this computer can't reach is
+    refused (422 {'detail': {'errors': ['unreachable']}}): usually a typo or a cable problem."""
+    ip = new.ip.strip()
+    if ip and not port_open(ip, new.port):
+        raise HTTPException(422, {'errors': ['unreachable']})
+    cfg = config.load_config()
+    password = new.password or cfg.get('nvr', {}).get('password', '')
+    cfg.update(nvr={'ip': ip, 'user': new.user.strip(), 'password': password, 'port': new.port}, language=new.language)
+    config.save_config(cfg)
+    return get_settings()
+
+
+def _camera(cfg, name):
+    cam = next((c for c in cfg.get('cameras', []) if c['name'] == name), None)
+    if cam is None:
+        raise HTTPException(404)
+    return cam
+
+
+class CameraSwitch(BaseModel):
+    enabled: bool
+
+
+@app.patch('/api/cameras/{name}')
+def switch_camera(name: str, change: CameraSwitch):
+    """Switch a camera on or off; the detection service follows within a few seconds."""
+    cfg = config.load_config()
+    _camera(cfg, name)['enabled'] = change.enabled
+    config.save_config(cfg)
+    return get_settings()
+
+
+@app.delete('/api/cameras/{name}')
+def delete_camera(name: str):
+    """Remove a camera. Trucks it already logged stay in the records."""
+    cfg = config.load_config()
+    cfg['cameras'].remove(_camera(cfg, name))
+    config.save_config(cfg)
+    return get_settings()
 
 
 def _public(row):

@@ -8,6 +8,7 @@ from datetime import date
 import pytest
 from fastapi.testclient import TestClient
 
+import server
 from server import app, get_store
 from src import config
 from src.i18n import TEXT
@@ -142,3 +143,43 @@ def test_month_excel_and_day_zip(site):
     assert client.get('/api/excel/month/2026-1').status_code == 422
     r = client.get('/api/zip/day/2026-10-17')
     assert sorted(zipfile.ZipFile(io.BytesIO(r.content)).namelist()) == ['gate_log_2026-10-17.xlsx', 'photos/snap.jpg']
+
+
+def test_settings_never_return_the_password(site, monkeypatch):
+    monkeypatch.setattr(server, 'port_open', lambda ip, port: True)
+    body = {'ip': ' 192.168.1.64 ', 'user': 'admin', 'password': 's3cret', 'port': 554, 'language': 'ar'}
+    r = client.put('/api/settings', json=body)
+    assert r.status_code == 200 and 's3cret' not in r.text
+    assert r.json()['nvr'] == {'ip': '192.168.1.64', 'user': 'admin', 'port': 554, 'has_password': True}
+    assert 's3cret' not in client.get('/api/settings').text
+    client.put('/api/settings', json={**body, 'password': ''})                   # blank: keep the old one
+    assert config.load_config()['nvr']['password'] == 's3cret' and config.load_config()['language'] == 'ar'
+    assert [c['name'] for c in client.get('/api/settings').json()['cameras']] == ['Gate 1', 'Gate 2', 'Old']
+
+
+def test_settings_refuse_unreachable_nvr(site, monkeypatch):
+    monkeypatch.setattr(server, 'port_open', lambda ip, port: False)
+    r = client.put('/api/settings', json={'ip': '10.9.9.9', 'password': 'x'})
+    assert r.status_code == 422 and r.json()['detail'] == {'errors': ['unreachable']}
+    assert 'nvr' not in config.load_config()
+    assert client.put('/api/settings', json={'ip': '', 'port': 70000}).status_code == 422
+
+
+def test_switch_and_delete_camera(site):
+    assert client.patch('/api/cameras/Gate 1', json={'enabled': False}).status_code == 200
+    assert client.patch('/api/cameras/Old', json={'enabled': True}).status_code == 200
+    assert [c.get('enabled', True) for c in config.load_config()['cameras']] == [False, True, True]
+    assert client.delete('/api/cameras/Gate 2').status_code == 200
+    assert [c['name'] for c in config.load_config()['cameras']] == ['Gate 1', 'Old']
+    assert client.delete('/api/cameras/Nope').status_code == 404
+    assert client.patch('/api/cameras/Nope', json={'enabled': True}).status_code == 404
+
+
+def test_settings_hide_camera_secrets(site):
+    cfg = config.load_config()
+    cfg['cameras'] += [{'name': 'Direct', 'source': 'rtsp://admin:hunter2@10.0.0.5:554/stream'},
+                       {'name': 'Own login', 'channel': 3, 'password': 'hunter2'}]
+    config.save_config(cfg)
+    r = client.get('/api/settings')
+    assert 'hunter2' not in r.text
+    assert r.json()['cameras'][3]['source'] == 'rtsp://***@10.0.0.5:554/stream'
