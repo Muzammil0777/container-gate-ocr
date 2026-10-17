@@ -196,6 +196,16 @@ TEXT = {
     'none_to_check': ('Nothing to check on this day.', 'لا يوجد ما يحتاج مراجعة في هذا اليوم.'),
     'tap_truck': ('Tap a truck to see its photos.', 'اضغط على شاحنة لعرض صورها.'),
     'open_full': ('Open full size', 'فتح بالحجم الكامل'),
+    'save_correction': ('Save correction', 'حفظ التصحيح'),
+    'cancel': ('Cancel', 'إلغاء'),
+    'fix_empty_hint': ('Leave a box empty if the truck had no plate or no container.',
+                       'اترك الخانة فارغة إذا لم تكن للشاحنة لوحة أو حاوية.'),
+    'downloads': ('Downloads', 'التنزيلات'),
+    'dl_day_excel': ('Excel for this day', 'ملف Excel لهذا اليوم'),
+    'dl_day_zip': ('Excel + photos (ZIP)', 'ملف Excel مع الصور (ZIP)'),
+    'dl_month_excel': ('Excel for the whole month', 'ملف Excel للشهر كاملاً'),
+    'dl_zip_help': ('The ZIP has the Excel file and every photo, so the links work on any computer.',
+                    'يحتوي ملف ZIP على ملف Excel وجميع الصور، لتعمل الروابط على أي جهاز.'),
 }
 
 

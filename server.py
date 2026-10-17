@@ -9,7 +9,7 @@ import time
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 # Imports the OCR code first: on Windows, a library loaded earlier (e.g. by pandas) can make
 # onnxruntime fail with "DLL load failed while importing onnxruntime_pybind11_state".
@@ -17,12 +17,14 @@ from src import config  # noqa: I001
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Response
+from fastapi import Path as PathParam
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from cctv import DEFAULTS, _safe
 from src.i18n import LANGUAGES, TEXT
-from src.store import Store, needs_review, to_excel
+from src.store import Store, needs_review, parse_fix, to_excel, to_zip
 
 WEB = config.ROOT / 'web' / 'dist'
 XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -113,10 +115,46 @@ def record_photo(rid: int, kind: Literal['snapshot', 'plate_image'], store: Stor
     return FileResponse(path)
 
 
+class Fix(BaseModel):
+    plate: str = ''
+    container: str = ''
+    direction: Literal['IN', 'OUT']
+
+
+@app.patch('/api/records/{rid}')
+def fix_record(rid: int, fix: Fix, store: Store = Depends(get_store)):
+    """A person corrects a reading. Bad input -> 422 {'detail': {'errors': [text keys]}}.
+    Saved -> the updated row, and warning 'check_digit_wrong' if the container's check digit
+    doesn't match (saved anyway)."""
+    row = store.get(rid)
+    if not row:
+        raise HTTPException(404)
+    fields, errors = parse_fix(fix.plate, fix.container, fix.direction)
+    if errors:
+        raise HTTPException(422, {'errors': errors})
+    config.save_fix(store, row, fields)
+    return {'row': _public(store.get(rid)), 'warning': 'check_digit_wrong' if fields['check_digit_ok'] == 0 else None}
+
+
+def _download(data, name, media_type):
+    return Response(data, media_type=media_type, headers={'Content-Disposition': f'attachment; filename="{name}"'})
+
+
 @app.get('/api/excel/day/{day}')
 def excel_day(day: date, lang: str = 'en', store: Store = Depends(get_store)):
-    return Response(to_excel(store.day(day.isoformat()), lang), media_type=XLSX,
-                    headers={'Content-Disposition': f'attachment; filename="gate_log_{day}.xlsx"'})
+    return _download(to_excel(store.day(day.isoformat()), lang), f'gate_log_{day}.xlsx', XLSX)
+
+
+@app.get('/api/excel/month/{month}')
+def excel_month(month: Annotated[str, PathParam(pattern=r'^\d{4}-\d{2}$')], lang: str = 'en',
+                store: Store = Depends(get_store)):
+    return _download(to_excel(store.month(month), lang), f'gate_log_{month}.xlsx', XLSX)
+
+
+@app.get('/api/zip/day/{day}')
+def zip_day(day: date, lang: str = 'en', store: Store = Depends(get_store)):
+    """The day's Excel plus every truck's photos; built when asked for (it can be large)."""
+    return _download(to_zip(store.day(day.isoformat()), lang, f'gate_log_{day}'), f'gate_log_{day}.zip', 'application/zip')
 
 
 if WEB.is_dir():  # last, so /api/... routes win

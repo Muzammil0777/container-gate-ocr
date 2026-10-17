@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { ActionIcon, Alert, Button, Drawer, Group, Paper, Stack, Switch, Text, TextInput, Tooltip } from '@mantine/core'
+import { ActionIcon, Alert, Button, Drawer, Group, Paper, Stack, Switch, Text, TextInput, Title, Tooltip } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
-import { IconAlertTriangle, IconChevronLeft, IconChevronRight } from '@tabler/icons-react'
+import { IconAlertTriangle, IconChevronLeft, IconChevronRight, IconFileSpreadsheet, IconFileZip } from '@tabler/icons-react'
 import { type Truck, useLang, usePoll, useT } from '../api'
 import DayStats from '../components/DayStats'
 import TruckDetail from '../components/TruckDetail'
@@ -16,7 +16,8 @@ function shift(day: string, n: number) {
 
 export default function Records() {
   const t = useT()
-  const rtl = useLang() === 'ar'
+  const lang = useLang()
+  const rtl = lang === 'ar'
   const today = usePoll<{ today: string }>('/api/status', 60000).data?.today ?? ''  // the gate computer's date
   const [picked, setPicked] = useState<string>()
   const day = picked ?? today
@@ -65,6 +66,27 @@ export default function Records() {
         </Stack>
       ))}
 
+      <Paper withBorder radius="lg" p="md">
+        <Stack gap="sm">
+          <Title order={4}>{t('downloads')}</Title>
+          <Group>
+            <Button component="a" href={`/api/excel/day/${day}?lang=${lang}`} leftSection={<IconFileSpreadsheet size={18} />}
+                    disabled={rows.length === 0}>
+              {t('dl_day_excel')}
+            </Button>
+            <Button component="a" href={`/api/zip/day/${day}?lang=${lang}`} variant="light" leftSection={<IconFileZip size={18} />}
+                    disabled={rows.length === 0}>
+              {t('dl_day_zip')}
+            </Button>
+            <Button component="a" href={`/api/excel/month/${day.slice(0, 7)}?lang=${lang}`} variant="default"
+                    leftSection={<IconFileSpreadsheet size={18} />}>
+              {t('dl_month_excel')}
+            </Button>
+          </Group>
+          <Text size="sm" c="dimmed">{t('dl_zip_help')}</Text>
+        </Stack>
+      </Paper>
+
       <Drawer
         opened={!!row}
         onClose={() => setOpen(undefined)}
@@ -72,7 +94,7 @@ export default function Records() {
         size={small ? '100%' : 'lg'}
         title={row && <Text fw={700}>{row.camera}</Text>}
       >
-        {row && <TruckDetail row={row} />}
+        {row && <TruckDetail key={row.id} row={row} onSaved={records.reload} />}
       </Drawer>
     </Stack>
   )

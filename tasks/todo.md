@@ -86,7 +86,7 @@ details (plate in Latin and Arabic, container, check digit). Photos come from
 **Files:** `server.py`, `web/src/pages/Records.tsx`, `web/src/components/TruckDetail.tsx`, `web/src/components/DayStats.tsx` (counts shared with Live), `src/i18n.py`, `tests/test_server.py`
 **Scope:** M
 
-### Task 5: Records page: fix a reading, downloads
+### Task 5: Records page: fix a reading, downloads ✅
 **Description:** In the side panel: edit plate, container and direction, Save. Uses the
 Task 1 check function; errors show next to the field in plain words. Saving rewrites the
 day/month Excel and appends to `logs/corrections.jsonl` (same as today). Download buttons:
@@ -94,18 +94,18 @@ day Excel, day ZIP with photos, month Excel.
 API: `PATCH /api/records/{id}`, `GET /api/excel/month/{month}`, `GET /api/zip/day/{day}`.
 
 **Acceptance criteria:**
-- [ ] Bad plate / bad container is refused with a clear message; nothing is saved
-- [ ] Wrong check digit saves but warns
-- [ ] After saving, the row shows ✏️ and the Excel file in `logs/excel` has the new value
+- [x] Bad plate / bad container is refused with a clear message; nothing is saved
+- [x] Wrong check digit saves but warns
+- [x] After saving, the row shows ✏️ and the Excel file in `logs/excel` has the new value
 
-**Verification:** Tests for PATCH (good, bad, wrong check digit) and that the Excel file is rewritten.
+**Verification:** API tests (good fix, wrong check digit, bad input, unknown record, month Excel, ZIP contents); in the browser on a test copy: bad plate refused, valid fix saved and shown as Fixed, Excel file on disk updated, check-digit warning in Arabic, all three downloads return files.
 **Dependencies:** Task 1, Task 4
 **Files:** `server.py`, `web/src/components/TruckDetail.tsx`, `web/src/pages/Records.tsx`, `tests/test_server.py`
 **Scope:** M
 
 ### Checkpoint: Daily use
-- [ ] Tests and build pass
-- [ ] Live → Records → fix → download works end to end on this laptop
+- [x] Tests and build pass
+- [x] Live → Records → fix → download works end to end (on a test copy of the app with a test video)
 - [ ] Review with the user (look and wording) before Phase 3
 
 ---

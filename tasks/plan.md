@@ -49,7 +49,7 @@ Details, acceptance criteria and checks per task: [todo.md](todo.md).
 ### Phase 2: Daily use (what gate staff use every day)
 - [x] Task 3: Live page
 - [x] Task 4: Records page: browse a day, see photos
-- [ ] Task 5: Records page: fix a reading, downloads
+- [x] Task 5: Records page: fix a reading, downloads
 
 ### Checkpoint: Daily use
 - [ ] A truck logged by cctv.py shows on Live within a few seconds

@@ -1,6 +1,8 @@
 """The web API (server.py), through FastAPI's test client."""
+import io
 import json
 import time
+import zipfile
 from datetime import date
 
 import pytest
@@ -102,3 +104,41 @@ def test_record_photos(site):
     assert client.get(f'/api/records/{rid}/plate_image').status_code == 404    # file gone
     assert client.get(f'/api/records/{rid + 1}/snapshot').status_code == 404   # no such record
     assert client.get(f'/api/records/{rid}/camera').status_code == 422         # not a photo field
+
+
+def test_fix_record(site, monkeypatch):
+    tmp_path, store = site
+    monkeypatch.setattr(config, 'ROOT', tmp_path)
+    _, rid = store.add({'date': '2026-10-17', 'time': '09:00:00', 'direction': 'IN', 'plate': '231 UTA'})
+    r = client.patch(f'/api/records/{rid}', json={'plate': '3231 uta', 'container': 'MRSU 442576 1', 'direction': 'OUT'})
+    assert r.status_code == 200 and r.json()['warning'] is None
+    row = r.json()['row']
+    assert (row['plate'], row['container'], row['direction'], row['corrected']) == ('3231 UTA', 'MRSU 442576 1', 'OUT', 1)
+    assert row['needs_review'] is False
+    assert (tmp_path / 'logs' / 'excel' / 'gate_log_2026-10-17.xlsx').is_file()
+    assert (tmp_path / 'logs' / 'corrections.jsonl').is_file()
+
+
+def test_fix_record_check_digit_and_bad_input(site, monkeypatch):
+    tmp_path, store = site
+    monkeypatch.setattr(config, 'ROOT', tmp_path)
+    _, rid = store.add({'date': '2026-10-17', 'time': '09:00:00', 'direction': 'IN', 'plate': '3231 UTA'})
+    r = client.patch(f'/api/records/{rid}', json={'plate': '3231 UTA', 'container': 'MRSU 442576 2', 'direction': 'IN'})
+    assert r.json()['warning'] == 'check_digit_wrong' and r.json()['row']['check_digit_ok'] == 0
+    r = client.patch(f'/api/records/{rid}', json={'plate': 'nonsense', 'container': 'MRSU 1', 'direction': 'IN'})
+    assert r.status_code == 422 and r.json()['detail'] == {'errors': ['bad_plate', 'bad_container']}
+    assert store.get(rid)['container'] == 'MRSU 442576 2'                           # nothing saved
+    assert client.patch(f'/api/records/{rid + 1}', json={'direction': 'IN'}).status_code == 404
+    assert client.patch(f'/api/records/{rid}', json={'direction': 'UP'}).status_code == 422
+
+
+def test_month_excel_and_day_zip(site):
+    tmp_path, store = site
+    snap = tmp_path / 'snap.jpg'
+    snap.write_bytes(b'jpg')
+    store.add({'date': '2026-10-17', 'time': '09:00:00', 'direction': 'IN', 'plate': '3231 UTA', 'snapshot': str(snap)})
+    r = client.get('/api/excel/month/2026-10')
+    assert r.status_code == 200 and r.content[:2] == b'PK' and 'gate_log_2026-10.xlsx' in r.headers['content-disposition']
+    assert client.get('/api/excel/month/2026-1').status_code == 422
+    r = client.get('/api/zip/day/2026-10-17')
+    assert sorted(zipfile.ZipFile(io.BytesIO(r.content)).namelist()) == ['gate_log_2026-10-17.xlsx', 'photos/snap.jpg']
