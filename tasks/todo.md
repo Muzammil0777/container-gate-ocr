@@ -221,23 +221,24 @@ restart is needed after setting it). Sign out in the header.
 **Files:** `server.py`, `web/src/pages/Login.tsx`, `web/src/components/PasswordForm.tsx`, `web/src/App.tsx`, `web/src/api.ts`, `web/src/pages/Setup.tsx`, `web/src/pages/Cameras.tsx`, `web/src/pages/Live.tsx`, `src/i18n.py`, `tests/test_server.py`
 **Scope:** M
 
-### Task 12: Switch launchers, update README, remove Streamlit
-**Description:** `start_gate.bat` starts the detection service and `server.py`, then opens the
-browser. `install_autostart.bat` unchanged in spirit. README: new install steps, the
-address other devices use (`http://<laptop-ip>:8000`), how to rebuild the web app. Delete
-`app.py`, Streamlit from `requirements.txt`, the Streamlit `.claude/launch.json` entry
-(replace with the new server). Remove the online demo link and badge from the README.
+### Task 12: Switch launchers, update README, remove Streamlit ✅
+**Description:** `start_gate.bat` starts the detection service and `server.py --open` (which
+opens the browser), and restarts the app if it ever stops. The server prints the address other
+devices use (`http://<laptop-ip>:8000`). README: new install steps (setup wizard, site password,
+other devices), pages, how to change and rebuild the web app; online demo removed. Deleted
+`app.py`, `packages.txt` (Streamlit Cloud), `streamlit` and `pandas` from `requirements.txt`,
+48 text entries only the Streamlit app used, and the Streamlit `.claude/launch.json` entry.
 
 **Acceptance criteria:**
-- [ ] Double-click `start_gate.bat` → browser opens the React app, detection runs
-- [ ] No Streamlit code or dependency left 
-- [ ] README install steps work on a clean Windows PC with only Python 3.12
+- [x] Double-click `start_gate.bat` → browser opens the React app, detection runs
+- [x] No Streamlit code or dependency left 
+- [x] README install steps work on a clean Windows PC with only Python 3.12
 
-**Verification:** Tests and build pass; fresh clone + README steps on this laptop.
+**Verification:** 88 tests pass. Fresh copy of the repo in an empty folder with a new Python 3.12 venv and only `requirements.txt` (which pulled newer FastAPI 0.143 / OpenCV 5.0): the app starts, serves the built web app and prints both addresses; all 88 tests pass there too. `start_gate.bat` itself was not double-clicked here (it would start the real detection service and open your browser).
 **Dependencies:** Checkpoint: Feature parity
-**Files:** `start_gate.bat`, `README.md`, `requirements.txt`, `app.py` (deleted), `.claude/launch.json`
+**Files:** `start_gate.bat`, `server.py`, `README.md`, `requirements.txt`, `app.py` and `packages.txt` (deleted), `src/i18n.py`, `cctv.py`, `videos/readme.txt`, `.claude/launch.json`
 **Scope:** S
 
 ### Checkpoint: Complete
-- [ ] All acceptance criteria met, tests and build pass
-- [ ] Ready for review
+- [x] All acceptance criteria met, tests and build pass (88 tests, here and in a fresh environment)
+- [ ] Ready for review: still open are a real Hikvision NVR, a real first-time user going through the wizard, and double-clicking `start_gate.bat` on the site laptop

@@ -6,10 +6,10 @@ or leaving a gate: date, time, direction, plate (Latin and Arabic), container co
 location, a snapshot and a plate close-up. Records are reviewed and corrected in the app, and
 downloaded as Excel per day or per month, or as a ZIP with photos. English and Arabic.
 
-Everything is free and runs on a normal Windows laptop CPU: no GPU, no cloud, no paid API.
+The app opens in a web browser, on the gate computer and on any computer or phone on the site
+network (with the site password). Each site runs its own copy.
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://container-gate-ocr.streamlit.app/)
-**Online demo: https://container-gate-ocr.streamlit.app/** (Test tab: upload a photo of a truck).
+Everything is free and runs on a normal Windows laptop CPU: no GPU, no cloud, no paid API.
 
 ![Output example](./output.jpg?raw=true "Output example")
 
@@ -28,31 +28,42 @@ Everything is free and runs on a normal Windows laptop CPU: no GPU, no cloud, no
 4. Connect the laptop to the camera network. Use a cable to the NVR's LAN port or its switch;
    the Wi-Fi can stay on for internet. If the cable gives an address starting `169.254`, give
    the Ethernet port a fixed IP in the NVR's range.
-5. **Find the cameras:** double-click `find_cameras.bat`. It asks for the NVR IP, username and
-   password (hidden), checks the connection, and saves a snapshot of every channel to
-   `logs\scan\`. Pick the channel that sees the trucks best (see *Camera placement* below).
-6. **Start:** double-click `start_gate.bat`. It starts the detection service (minimised
-   window) and opens the app at http://localhost:8502.
-7. In the app's **📷 Cameras** tab:
-   - enter the NVR IP, username and password
-   - add each gate camera: channel, IN/OUT, location, and optionally a reading area
-   - detection starts on it within seconds
+5. **Start:** double-click `start_gate.bat`. It starts the detection service (minimised
+   window) and opens the app in the browser at http://localhost:8000. Keep the black
+   *Gate app* window open.
+6. **The first time, the app walks you through setup:**
+   1. choose a **site password**
+   2. enter the recorder's (NVR) IP address, username and password
+   3. tap the camera picture that shows the gate, then drag a box over where trucks pass
+
+   Detection starts on the camera within seconds. Add more cameras on the **Cameras** page
+   (see *Camera placement* below for what makes a good camera).
+7. **Other computers and phones** on the same network: the *Gate app* window shows the
+   address to type, e.g. `http://192.168.1.103:8000`. They sign in with the site password.
+   If Windows asks whether Python may use the network, allow it on **private networks**.
+   Until a site password is chosen, the app opens only on the gate computer itself.
 8. **Optional:** double-click `install_autostart.bat` so everything starts when you sign in
    to Windows (no administrator rights needed). `uninstall_autostart.bat` undoes it.
 
+Camera not showing up? `find_cameras.bat` checks the NVR connection, explains network vs.
+login problems and saves a snapshot of every channel to `logs\scan\`.
+
 ## The app
 
-| Tab | What it's for |
+| Page | What it's for |
 |---|---|
-| 🔴 **Live** | Each camera's view with its detections (🟢 online / 🔴 offline warning), today's trucks as they're logged, and ⬇ today's Excel. If detection isn't running, a button starts it. |
-| 📒 **Records** | Pick a day and click a truck to see its **snapshot and plate photo next to its details**. Fix a wrong plate or container and save; the Excel files update straight away. *Show only trucks that need review* lists readings to double-check. Downloads: **⬇ Excel (day)**, **📦 ZIP with photos (day)**, **⬇ Excel (month)**. |
-| 📷 **Cameras** | NVR login, Excel language, cameras (add / change / switch off / delete), reading area, and a one-frame camera test. |
-| 🧪 **Test** | Try a photo, a recorded video (simulates the gate and gives an Excel) or a stream URL, plus the OCR settings. |
+| **Live** | Each camera's picture with its detections and a clear state (*Working*, *No picture for 20 s*, *Stopped*), today's counts and trucks as they're logged, and today's Excel. If detection isn't running, one button starts it. |
+| **Records** | Pick a day and tap a truck to see its **plate close-up and snapshot next to its readings**. *Correct the reading* fixes a wrong plate or container; the Excel files update straight away. *Only trucks to check* lists readings to double-check. Downloads: Excel for the day, Excel + photos (ZIP), Excel for the month. |
+| **Cameras** | Recorder (NVR) login, Excel language, cameras (add / switch off / delete), each camera's reading area drawn on its picture with a test read, and the site password. |
+| **Test** | Try photos, a recorded video (played like a gate camera, with an Excel of what it found) or a stream address, plus advanced OCR settings. Nothing here goes into the records. |
 
-**Needs review (⚠️):** shown when the plate wasn't confirmed by its Arabic row, the
-container's check digit wasn't confirmed, or one of them is missing. ✏️ marks rows a person
-corrected. Corrections are also kept in `logs\corrections.jsonl` with the photo, for
-improving accuracy later.
+The language switch (English / العربية) is at the top; Arabic turns the whole page right-to-left.
+Terms like *check digit* have an (i) that explains them.
+
+**Check:** shown when the plate wasn't confirmed by its Arabic row, the container's check
+digit wasn't confirmed, or one of them is missing. **Fixed** marks rows a person corrected.
+Corrections are also kept in `logs\corrections.jsonl` with the photo, for improving accuracy
+later.
 
 ## Where the data is
 
@@ -62,7 +73,7 @@ improving accuracy later.
 | `logs\excel\gate_log_YYYY-MM-DD.xlsx` | One Excel per day, rewritten after every truck |
 | `logs\excel\gate_log_YYYY-MM.xlsx` | One Excel per month, for audits |
 | `logs\snapshots\YYYY-MM-DD\` | Truck snapshot and plate close-up for every row |
-| `cameras.json` | Settings, including the NVR password. Stays on this computer (git-ignored). |
+| `cameras.json` | Settings, including the NVR password and the site password (stored only as a salted hash). Stays on this computer (git-ignored). |
 
 Opening an Excel file in Excel while trucks are being logged is fine: the data is safe in
 the database, and the file is updated as soon as Excel closes it.
@@ -72,9 +83,12 @@ the database, and the file is updated as soon as Excel closes it.
 ```
 cameras ──► cctv.py (detection service) ──► logs\gate.db ──► Excel files
                  ▲   │                           │
-     cameras.json│   └─► live frames + status ──►├─► app.py (Streamlit): Live / Records / Cameras / Test
+     cameras.json│   └─► live frames + status ──►├─► server.py (API + web app) ◄── browsers on the site network
                  └────────── app writes settings ┘
 ```
+
+- **The app** is `server.py` (FastAPI) serving an API and the React web app in `web/`. The
+  built app (`web/dist`) is part of the repository, so sites need only Python, not Node.js.
 
 - **Detection runs as its own service** (`cctv.py`), separate from the app. It follows
   `cameras.json` (cameras added or stopped in the app take effect within a second),
@@ -131,8 +145,8 @@ above) shows each truck's plate and code only for 1–3 seconds, and with charac
   which gives plenty of readable frames.
 - The 3 test photos in `images/ksa_*.jpg` (taken behind the trucks) read perfectly. That's
   the view to aim for.
-- **Reading area:** use the *Reading area* sliders (Cameras tab) to skip sky and far-away
-  parts of the picture. It's faster, and the area is read sharper.
+- **Reading area:** on the Cameras page, drag a box over where trucks pass to skip sky and
+  far-away parts of the picture. It's faster, and the area is read sharper.
 
 ## Settings (`cameras.json`, all optional)
 
@@ -146,12 +160,13 @@ above) shows each truck's plate and code only for 1–3 seconds, and with charac
 | `cooldown_s` | 300 | The same truck isn't logged again in the same direction within this time |
 | `max_side` | 1920 | Search size for whole frames (1600 when a camera has a reading area) |
 | `use_cuda` | false | NVIDIA GPU: `pip install onnxruntime-gpu`, then `true` (built-in Intel/AMD graphics doesn't help) |
-| camera `roi` | whole frame | Reading area `[left, top, right, bottom]` as fractions, set with the sliders in the app |
+| camera `roi` | whole frame | Reading area `[left, top, right, bottom]` as fractions, drawn on the camera picture in the app |
 
 ## Command line
 
 | Command | What |
 |---|---|
+| `py -3.12 server.py --open` | Run the app (port 8000) and open it in the browser |
 | `py -3.12 cctv.py --scan` | Find cameras on the NVR (asks for login) |
 | `py -3.12 cctv.py --config cameras.json` | Run the detection service |
 | `py -3.12 cctv.py --source video.mp4 --direction IN` | Log a single video or camera without the app |
@@ -164,10 +179,26 @@ above) shows each truck's plate and code only for 1–3 seconds, and with charac
 - **Saudi plates only.** Plates from other countries may appear as unconfirmed "Latin only" readings.
 - **Close trucks:** trucks less than about 5 s apart could have plate and container paired
   wrongly. The snapshot shows what was paired, and it can be fixed in Records.
-- **Built-in widgets stay in English:** a few of Streamlit's own widgets (the file upload box)
-  aren't translated.
 - **Windows DLL error:** if you see `DLL load failed while importing onnxruntime_pybind11_state`,
-  `pandas`/`pyarrow` was imported before `onnxruntime`. The app avoids this by import order.
+  another library (pandas/pyarrow did this) was imported before `onnxruntime`. The app avoids
+  this by import order.
+- **Plain HTTP on the site network:** the site password protects the app, but traffic isn't
+  encrypted. Keep the app on the site's own network; for access from outside, use a VPN such
+  as Tailscale rather than opening a port to the internet.
+
+## Changing the web app (developers)
+
+Only needed to change how the app looks or works. Needs Node.js 20 or newer.
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+`npm run dev` serves the app at http://localhost:5173 and passes API calls to `server.py`
+(run it too). After changes, `npm run build` rebuilds `web/dist`; commit it, since sites use
+the built app as it is. All text is in [src/i18n.py](src/i18n.py) (English and Arabic).
 
 ---
 
@@ -178,8 +209,12 @@ above) shows each truck's plate and code only for 1–3 seconds, and with charac
 وصورة للشاحنة وصورة للوحة. مجاني ويعمل على معالج الجهاز.
 
 - **التثبيت:** ثبّت Python 3.12، ثم `py -3.12 -m pip install -r requirements.txt`
-- **التشغيل:** انقر مرتين على `start_gate.bat`، ثم أضف جهاز التسجيل والكاميرات من تبويب 📷 الكاميرات
-- **السجلات:** من تبويب 📒 السجلات اضغط على أي شاحنة لعرض صورتها وصورة اللوحة وتصحيح القراءة، ونزّل
+- **التشغيل:** انقر مرتين على `start_gate.bat`، فيفتح التطبيق في المتصفح. في المرة الأولى يرشدك
+  التطبيق خطوة بخطوة: اختر كلمة مرور للموقع، ثم أدخل بيانات جهاز التسجيل، ثم اضغط على صورة الكاميرا
+  التي ترى البوابة وحدد منطقة القراءة
+- **الأجهزة الأخرى والهواتف:** افتح العنوان الظاهر في نافذة *Gate app* (مثل `http://192.168.1.103:8000`)
+  وسجّل الدخول بكلمة مرور الموقع
+- **السجلات:** من صفحة السجلات اضغط على أي شاحنة لعرض صورة اللوحة وصورة الشاحنة وتصحيح القراءة، ونزّل
   ملف Excel لليوم أو للشهر أو ملف ZIP مع الصور
 - **التشغيل التلقائي:** انقر مرتين على `install_autostart.bat`
 - **أهم عامل للدقة هو موقع الكاميرا:** كاميرا قريبة من مسار البوابة تُظهر اللوحة بعرض 150 بكسل على الأقل

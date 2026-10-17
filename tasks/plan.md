@@ -67,10 +67,11 @@ Details, acceptance criteria and checks per task: [todo.md](todo.md).
 ### Phase 4: Made for non-technical users, and roll-out
 - [x] Task 10: First-run setup wizard and plain-language help
 - [x] Task 11: Site login (one password per site)
-- [ ] Task 12: Switch launchers to the new app, update README, remove Streamlit
+- [x] Task 12: Switch launchers to the new app, update README, remove Streamlit
 
 ### Checkpoint: Complete
-- [ ] Fresh install on a clean Windows PC by following README only
+- [x] Fresh install from the repo files into an empty folder with a new Python 3.12 environment
+      (only `requirements.txt`): app starts, all tests pass. Not yet on a separate clean PC.
 - [ ] Human review before merge
 
 ## Risks and Mitigations

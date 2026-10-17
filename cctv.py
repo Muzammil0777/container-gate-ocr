@@ -366,7 +366,7 @@ def main():
             cv2.destroyWindow('test')
         except cv2.error:
             print("[cctv] This OpenCV build can't open windows; ignoring --show. "
-                  "Use the Live tab in the app instead (streamlit run app.py).")
+                  "Watch it on the Live page of the gate app instead (start_gate.bat).")
             args.show = False
 
     log = GateLog(Store(cfg['db']), cfg['snapshots'], cfg['excel_dir'], cfg['language'], cfg['cooldown_s'])

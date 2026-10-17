@@ -10,15 +10,17 @@ import hashlib
 import hmac
 import secrets
 import shutil
+import socket
 import tempfile
 import threading
 import time
+import webbrowser
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 
-# Imports the OCR code first: on Windows, a library loaded earlier (e.g. by pandas) can make
+# Imports the OCR code first: on Windows, a library loaded earlier (pandas was one) can make
 # onnxruntime fail with "DLL load failed while importing onnxruntime_pybind11_state".
 from src import config  # noqa: I001
 
@@ -651,16 +653,33 @@ if WEB.is_dir():  # last, so /api/... routes win
     app.mount('/', StaticFiles(directory=WEB, html=True), name='web')
 
 
+def lan_address():
+    """This computer's address on the site network (what other computers and phones type in)."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        try:
+            s.connect(('10.255.255.255', 1))  # sends nothing; just picks the network interface
+            return s.getsockname()[0]
+        except OSError:
+            return None
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     # the whole network; until a site password is set, the API answers only this computer
     ap.add_argument('--host', default='0.0.0.0')
     ap.add_argument('--port', type=int, default=8000)
+    ap.add_argument('--open', action='store_true', help='open the app in the browser once it is running')
     args = ap.parse_args()
     if not WEB.is_dir():
         print(f'[server] {WEB} is missing: build the app first (cd web && npm install && npm run build)')
     for leftover in Path(tempfile.gettempdir()).glob('gate_video_*'):  # video tests from an earlier run
         shutil.rmtree(leftover, ignore_errors=True)
+    print(f'[server] Gate app on this computer: http://localhost:{args.port}')
+    if (ip := lan_address()) and args.host == '0.0.0.0':
+        print(f'[server] Other computers and phones on the network: http://{ip}:{args.port} '
+              f'(after a site password is chosen in the app)')
+    if args.open:
+        threading.Timer(1.5, webbrowser.open, [f'http://localhost:{args.port}']).start()
     uvicorn.run(app, host=args.host, port=args.port)
 
 
