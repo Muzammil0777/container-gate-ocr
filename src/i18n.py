@@ -242,6 +242,22 @@ TEXT = {
     'nothing_found': ('Nothing readable found. Move the reading area, or try again when a truck is there.',
                       'لم يتم العثور على شيء مقروء. حرّك منطقة القراءة أو أعد المحاولة عند وجود شاحنة.'),
     'save_camera_web': ('Save camera', 'حفظ الكاميرا'),
+    # Web app: Test
+    'test_intro': ('Try the reader on a photo or a camera stream. Nothing here is saved to the records.',
+                   'جرّب القارئ على صورة أو بث كاميرا. لا يُحفظ شيء هنا في السجلات.'),
+    'drop_photos': ('Drop truck photos here', 'أفلت صور الشاحنات هنا'),
+    'choose_photos': ('Choose photos', 'اختيار صور'),
+    'sample_photo': ('…or try a sample photo', '…أو جرّب صورة نموذجية'),
+    'read_btn': ('Read', 'قراءة'),
+    'stream_help': ('Paste a camera stream address to read one picture from it.',
+                    'الصق عنوان بث الكاميرا لقراءة صورة واحدة منه.'),
+    'read_picture': ('Read one picture', 'قراءة صورة واحدة'),
+    'bad_url': ('The address must start with rtsp://, http:// or https://.', 'يجب أن يبدأ العنوان بـ rtsp:// أو http:// أو https://.'),
+    'too_big': ('This file is too large (25 MB at most).', 'هذا الملف كبير جداً (25 ميجابايت كحد أقصى).'),
+    'bad_options': ('These settings are not valid.', 'هذه الإعدادات غير صالحة.'),
+    'advanced': ('Advanced settings', 'إعدادات متقدمة'),
+    'box_colors': ('Boxes: green = container confirmed, orange = container not confirmed, blue = number plate.',
+                   'المربعات: أخضر = حاوية مؤكدة، برتقالي = حاوية غير مؤكدة، أزرق = لوحة سيارة.'),
 }
 
 

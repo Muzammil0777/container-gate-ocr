@@ -236,3 +236,48 @@ def test_read_image_finds_code_and_plate():
     out = server.read_image(cv2.imread(str(ROOT / 'images' / 'ksa_mrsu_3231uta.jpg')))
     assert {'code': 'MRSU 442576 1', 'valid': True} in [{k: c[k] for k in ('code', 'valid')} for c in out['codes']]
     assert '3231 UTA' in [p['plate'] for p in out['plates']] and out['ms'] > 0
+
+
+@pytest.fixture
+def fake_ocr(monkeypatch):
+    """OCR stand-in that records the options and picture size it was called with."""
+    calls = []
+    monkeypatch.setattr(server, 'get_recognizer', lambda side: lambda img, **o: calls.append((side, img.shape, o)) or
+                        {'codes': [], 'plates': [], 'texts': ['hi'], 'ms': 7.0})
+    return calls
+
+
+def test_ocr_photo(fake_ocr):
+    jpg = cv2.imencode('.jpg', np.zeros((40, 60, 3), np.uint8))[1].tobytes()
+    r = client.post('/api/ocr', files={'file': ('a.jpg', jpg, 'image/jpeg')}, data={'max_side': '1280', 'zoom': 'false'})
+    assert r.status_code == 200 and r.json()['texts'] == ['hi'] and r.json()['ms'] == 7
+    assert fake_ocr == [(1280, (40, 60, 3), {'zoom': False, 'vertical': True, 'plates': True})]
+    r = client.post('/api/ocr', files={'file': ('a.txt', b'not an image', 'text/plain')})
+    assert r.status_code == 422 and r.json()['detail'] == {'errors': ['bad_image']}
+    assert client.post('/api/ocr', files={'file': ('a.jpg', jpg, 'image/jpeg')}, data={'max_side': '5'}).status_code == 422
+
+
+def test_ocr_photo_too_big(fake_ocr, monkeypatch):
+    monkeypatch.setattr(server, 'MAX_UPLOAD', 10)
+    r = client.post('/api/ocr', files={'file': ('a.jpg', b'x' * 11, 'image/jpeg')})
+    assert r.status_code == 413 and fake_ocr == []
+
+
+def test_samples(fake_ocr):
+    names = client.get('/api/samples').json()
+    assert 'ksa_mrsu_3231uta.jpg' in names and 'demo_input.jpg' in names
+    assert client.post('/api/ocr/sample', json={'name': 'ksa_mrsu_3231uta.jpg', 'plates': False}).status_code == 200
+    assert fake_ocr[0][2]['plates'] is False
+    assert client.post('/api/ocr/sample', json={'name': '../server.py'}).status_code == 404
+
+
+def test_stream_only_network_addresses(fake_ocr, monkeypatch):
+    opened = []
+    monkeypatch.setattr(config, 'grab_frame', lambda url: opened.append(url) or np.zeros((10, 10, 3), np.uint8))
+    for bad in ('C:/Windows/win.ini', 'file:///etc/passwd', 'videos/x.mp4', '0'):
+        r = client.post('/api/stream/frame', json={'url': bad})
+        assert r.status_code == 422 and r.json()['detail'] == {'errors': ['bad_url']}, bad
+    assert opened == []
+    assert client.post('/api/stream/frame', json={'url': ' rtsp://cam/1 '}).status_code == 200 and opened == ['rtsp://cam/1']
+    monkeypatch.setattr(config, 'grab_frame', lambda url: None)
+    assert client.post('/api/stream/frame', json={'url': 'rtsp://cam/1'}).json()['detail'] == {'errors': ['camera_error']}

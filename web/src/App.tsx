@@ -9,6 +9,7 @@ import { api, type Lang, TextContext, type TextTable, useT } from './api'
 import Cameras from './pages/Cameras'
 import Live from './pages/Live'
 import Records from './pages/Records'
+import Test from './pages/Test'
 
 const PAGES = [
   { key: 'live', icon: IconVideo },
@@ -125,7 +126,7 @@ function Shell({ lang, setLang, languages }: { lang: Lang; setLang: (l: Lang) =>
           <Title order={2}>{t(`nav_${page}`)}</Title>
           <Text c="dimmed">{t(`nav_${page}_help`)}</Text>
         </Stack>
-        {page === 'live' ? <Live /> : page === 'records' ? <Records /> : page === 'cameras' ? <Cameras /> : (
+        {page === 'live' ? <Live /> : page === 'records' ? <Records /> : page === 'cameras' ? <Cameras /> : page === 'test' ? <Test /> : (
           <Paper withBorder p="xl" radius="lg">
             <Text c="dimmed">{t('coming_soon')}</Text>
           </Paper>

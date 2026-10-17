@@ -144,20 +144,20 @@ API: `POST /api/cameras`, `POST /api/cameras/frame` (grab one frame), `POST /api
 **Files:** `server.py`, `web/src/pages/Cameras.tsx`, `web/src/components/AddCamera.tsx`, `web/src/components/AreaPicker.tsx`, `web/src/components/OcrResult.tsx`, `src/i18n.py`, `tests/test_server.py`
 **Scope:** M
 
-### Task 8: Test page: photos and stream URL
+### Task 8: Test page: photos and stream URL ✅
 **Description:** Drop photos (or pick a sample from `images/`) → annotated picture, container
 codes, plates, time taken. "Advanced" fold holds the OCR settings (max side, zoom, vertical,
 plates). Stream URL → grab one frame → same result view. Reuses `OcrResult` from Task 7.
 API: `POST /api/ocr` (upload, with options), `GET /api/samples`, `POST /api/stream/frame`.
 
 **Acceptance criteria:**
-- [ ] Several photos at once, each with its own result
-- [ ] Not-an-image upload → friendly error
-- [ ] Results match the Streamlit Test tab for the same sample image
+- [x] Several photos at once, each with its own result
+- [x] Not-an-image upload → friendly error
+- [x] Results match the Streamlit Test tab for the same sample image
 
-**Verification:** Test `/api/ocr` with `demo_input.jpg` (finds the known code).
+**Verification:** API tests (upload, bad image, too big, bad options, samples by name only, stream accepts only rtsp/http(s)); all 22 sample photos give the same codes and plates as the Streamlit Test tab; in the browser: sample read, two dropped photos (one broken) each with its own result, local file path refused as a stream.
 **Dependencies:** Task 7
-**Files:** `server.py`, `web/src/pages/Test.tsx`, `tests/test_server.py`
+**Files:** `server.py`, `web/src/pages/Test.tsx`, `src/i18n.py`, `requirements.txt` (python-multipart), `tests/test_server.py`
 **Scope:** S
 
 ### Task 9: Test page: video file as a background job

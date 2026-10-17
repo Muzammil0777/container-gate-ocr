@@ -18,8 +18,9 @@ from typing import Annotated, Literal
 from src import config  # noqa: I001
 
 import cv2
+import numpy as np
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Response
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Response, UploadFile
 from fastapi import Path as PathParam
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -36,6 +37,7 @@ WEB = config.ROOT / 'web' / 'dist'
 XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 OFFLINE_S = 15       # a camera with no new picture for this long is shown as offline
 STARTING_S = 30      # after "Start detection", how long the page says "starting"
+MAX_UPLOAD = 25 << 20  # bytes per uploaded photo
 _started_at = 0.0
 _ocr_lock = threading.Lock()  # one OCR at a time: it already uses every CPU core
 
@@ -265,6 +267,69 @@ def read_image(img, max_side=1920, **opts):
         'texts': [str(x) for x in out['texts']],
         'image': 'data:image/jpeg;base64,' + base64.b64encode(_jpeg(shown)).decode(),
     }
+
+
+class OcrOptions(BaseModel):
+    max_side: Literal[960, 1280, 1600, 1920, 2560] = 1920
+    zoom: bool = True
+    vertical: bool = True
+    plates: bool = True
+
+
+@app.post('/api/ocr')
+def ocr_photo(file: UploadFile = File(...), max_side: int = Form(1920), zoom: bool = Form(True),
+              vertical: bool = Form(True), plates: bool = Form(True)):
+    """Read an uploaded photo (Test page)."""
+    try:
+        opts = OcrOptions(max_side=max_side, zoom=zoom, vertical=vertical, plates=plates)
+    except ValueError:
+        raise HTTPException(422, {'errors': ['bad_options']}) from None
+    data = file.file.read(MAX_UPLOAD + 1)
+    if len(data) > MAX_UPLOAD:
+        raise HTTPException(413, {'errors': ['too_big']})
+    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+    if img is None:
+        raise HTTPException(422, {'errors': ['bad_image']})
+    return read_image(img, **opts.model_dump())
+
+
+def _samples():
+    """Sample photos shipped with the app: {name: path}."""
+    files = sorted(p for p in (config.ROOT / 'images').glob('*') if p.suffix.lower() in ('.png', '.jpg', '.jpeg'))
+    return {p.name: p for p in files + [config.ROOT / 'demo_input.jpg'] if p.is_file()}
+
+
+@app.get('/api/samples')
+def samples():
+    return list(_samples())
+
+
+class SampleRequest(OcrOptions):
+    name: str
+
+
+@app.post('/api/ocr/sample')
+def ocr_sample(req: SampleRequest):
+    path = _samples().get(req.name)
+    if path is None:
+        raise HTTPException(404)
+    return read_image(cv2.imread(str(path)), **req.model_dump(exclude={'name'}))
+
+
+class StreamRequest(OcrOptions):
+    url: str
+
+
+@app.post('/api/stream/frame')
+def ocr_stream(req: StreamRequest):
+    """Read one picture from a camera stream address (Test page). Only network streams: OpenCV
+    would otherwise also open files on this computer."""
+    if not req.url.strip().lower().startswith(('rtsp://', 'http://', 'https://')):
+        raise HTTPException(422, {'errors': ['bad_url']})
+    frame = config.grab_frame(req.url.strip())
+    if frame is None:
+        raise HTTPException(422, {'errors': ['camera_error']})
+    return read_image(frame, **req.model_dump(exclude={'url'}))
 
 
 def _public(row):
