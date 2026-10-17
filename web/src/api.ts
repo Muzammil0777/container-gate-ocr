@@ -24,11 +24,13 @@ export function useT() {
 
 export const useLang = () => useContext(TextContext).lang
 
-/** GET `path` now and every `everyMs`. `failed` once a request fails (until one succeeds),
- *  `at` changes on every successful refresh. */
-export function usePoll<T>(path: string, everyMs: number) {
+/** GET `path` now and every `everyMs` (nothing while path is null). `failed` once a request
+ *  fails (until one succeeds), `at` changes on every successful refresh. */
+export function usePoll<T>(path: string | null, everyMs: number) {
   const [state, setState] = useState<{ data?: T; failed: boolean; at: number }>({ failed: false, at: 0 })
   useEffect(() => {
+    setState({ failed: false, at: 0 })  // a new path: don't show the old path's data
+    if (!path) return
     let alive = true
     const load = () => api<T>(path)
       .then((data) => alive && setState({ data, failed: false, at: Date.now() }))

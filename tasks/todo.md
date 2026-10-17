@@ -70,20 +70,20 @@ API: `GET /api/status`, `GET /api/live/{camera}.jpg`, `POST /api/service/start`,
 **Files:** `server.py`, `web/src/pages/Live.tsx`, `web/src/components/TruckTable.tsx`, `web/src/api.ts` (`usePoll`, `Truck`), `src/i18n.py`, `tests/test_server.py`
 **Scope:** M
 
-### Task 4: Records page: browse a day, see photos
+### Task 4: Records page: browse a day, see photos ✅
 **Description:** Pick a day (calendar), "only trucks that need checking" switch, counts, and
 the day's trucks. Clicking a truck opens a side panel with the snapshot, plate close-up and
 details (plate in Latin and Arabic, container, check digit). Photos come from
 `GET /api/records/{id}/snapshot` and `/plate_image`, looked up by id.
 
 **Acceptance criteria:**
-- [ ] Rows keep their order (oldest first) so a fixed row doesn't jump
-- [ ] Missing photo shows a friendly message, not a broken image
-- [ ] Photo endpoints only return files referenced by that record (no path in the URL)
+- [x] Rows keep their order (oldest first) so a fixed row doesn't jump
+- [x] Missing photo shows a friendly message, not a broken image
+- [x] Photo endpoints only return files referenced by that record (no path in the URL)
 
-**Verification:** Test: unknown id → 404, record without photo → 404; manual check in browser.
+**Verification:** Photo endpoint test (unknown id, missing file, wrong field); checked in the browser in English and Arabic: day picker, previous day, back to today, filter, side panel with plate close-up and snapshot, missing-photo message.
 **Dependencies:** Task 3 (reuses TruckTable)
-**Files:** `server.py`, `web/src/pages/Records.tsx`, `web/src/components/TruckDetail.tsx`, `tests/test_server.py`
+**Files:** `server.py`, `web/src/pages/Records.tsx`, `web/src/components/TruckDetail.tsx`, `web/src/components/DayStats.tsx` (counts shared with Live), `src/i18n.py`, `tests/test_server.py`
 **Scope:** M
 
 ### Task 5: Records page: fix a reading, downloads

@@ -4,6 +4,7 @@ import {
 } from '@mantine/core'
 import { IconAlertTriangle, IconCameraOff, IconDownload, IconPlayerPlay, IconVideoPlus } from '@tabler/icons-react'
 import { api, type Truck, useLang, usePoll, useT } from '../api'
+import DayStats from '../components/DayStats'
 import TruckTable, { Direction } from '../components/TruckTable'
 
 type CameraState = {
@@ -17,7 +18,7 @@ export default function Live() {
   const lang = useLang()
   const status = usePoll<Status>('/api/status', 2000)
   const s = status.data
-  const trucks = usePoll<Truck[]>(`/api/records?day=${s?.today ?? ''}`, 2000)
+  const trucks = usePoll<Truck[]>(s ? `/api/records?day=${s.today}` : null, 2000)
   const [clickedAt, setClickedAt] = useState(0)  // shows "starting" until the server reports it
 
   if (status.failed) return <Alert color="red" icon={<IconAlertTriangle />}>{t('server_down')}</Alert>
@@ -63,12 +64,7 @@ export default function Live() {
             {t('download_today')}
           </Button>
         </Group>
-        <SimpleGrid cols={{ base: 2, sm: 4 }}>
-          <Stat label={t('stat_total')} value={rows.length} />
-          <Stat label={t('stat_in')} value={rows.filter((r) => r.direction === 'IN').length} color="teal" />
-          <Stat label={t('stat_out')} value={rows.filter((r) => r.direction === 'OUT').length} color="orange" />
-          <Stat label={t('stat_review')} value={rows.filter((r) => r.needs_review).length} color="yellow" />
-        </SimpleGrid>
+        <DayStats rows={rows} />
         {rows.length === 0 ? (
           <Text c="dimmed">{t('no_trucks_today')}</Text>
         ) : (
@@ -117,14 +113,5 @@ function CameraCard({ cam, at }: { cam: CameraState; at: number }) {
         </Badge>
       </Group>
     </Card>
-  )
-}
-
-function Stat({ label, value, color }: { label: string; value: number; color?: string }) {
-  return (
-    <Paper withBorder p="md" radius="lg">
-      <Text size="sm" c="dimmed">{label}</Text>
-      <Text fz={32} fw={700} c={color && value ? `${color}.7` : undefined} lh={1.2}>{value}</Text>
-    </Paper>
   )
 }

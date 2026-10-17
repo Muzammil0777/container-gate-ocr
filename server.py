@@ -8,6 +8,8 @@ import argparse
 import time
 from datetime import date
 from functools import lru_cache
+from pathlib import Path
+from typing import Literal
 
 # Imports the OCR code first: on Windows, a library loaded earlier (e.g. by pandas) can make
 # onnxruntime fail with "DLL load failed while importing onnxruntime_pybind11_state".
@@ -98,6 +100,17 @@ def _public(row):
 def records(day: date, store: Store = Depends(get_store)):
     """One day's trucks, oldest first."""
     return [_public(r) for r in store.day(day.isoformat())]
+
+
+@app.get('/api/records/{rid}/{kind}')
+def record_photo(rid: int, kind: Literal['snapshot', 'plate_image'], store: Store = Depends(get_store)):
+    """A truck's snapshot or plate close-up. Looked up by record id, so only photos that
+    belong to a record can be fetched."""
+    row = store.get(rid)
+    path = row and row.get(kind)
+    if not path or not Path(path).is_file():
+        raise HTTPException(404)
+    return FileResponse(path)
 
 
 @app.get('/api/excel/day/{day}')

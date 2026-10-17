@@ -27,10 +27,10 @@ export default function TruckTable({ rows, onPick, picked }: { rows: Truck[]; on
                 {r.plate ? (
                   <Stack gap={0}>
                     <Group gap={6} wrap="nowrap">
-                      <Text fw={600} ff="monospace">{r.plate}</Text>
+                      <Text fw={600} ff="monospace"><bdi>{r.plate}</bdi></Text>
                       <Check ok={!!r.plate_verified} />
                     </Group>
-                    <Text size="sm" c="dimmed" dir="rtl" ta="start">{r.plate_ar}</Text>
+                    <Text size="sm" c="dimmed"><bdi>{r.plate_ar}</bdi></Text>
                   </Stack>
                 ) : <Text c="dimmed">—</Text>}
               </Table.Td>
@@ -38,7 +38,7 @@ export default function TruckTable({ rows, onPick, picked }: { rows: Truck[]; on
                 {r.container ? (
                   <Stack gap={0}>
                     <Group gap={6} wrap="nowrap">
-                      <Text fw={600} ff="monospace" style={{ whiteSpace: 'nowrap' }}>{r.container}</Text>
+                      <Text fw={600} ff="monospace" style={{ whiteSpace: 'nowrap' }}><bdi>{r.container}</bdi></Text>
                       <Check ok={!!r.check_digit_ok} />
                     </Group>
                     {r.size_type && <Text size="sm" c="dimmed">{r.size_type}</Text>}

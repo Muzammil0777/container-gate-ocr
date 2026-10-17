@@ -90,3 +90,15 @@ def test_excel_day(site):
     r = client.get('/api/excel/day/2026-10-17?lang=ar')
     assert r.status_code == 200 and r.content[:2] == b'PK'
     assert 'gate_log_2026-10-17.xlsx' in r.headers['content-disposition']
+
+
+def test_record_photos(site):
+    tmp_path, store = site
+    snap = tmp_path / 'snap.jpg'
+    snap.write_bytes(b'snap')
+    _, rid = store.add({'date': '2026-10-17', 'time': '09:00:00', 'direction': 'IN', 'plate': '3231 UTA',
+                        'snapshot': str(snap), 'plate_image': str(tmp_path / 'deleted.jpg')})
+    assert client.get(f'/api/records/{rid}/snapshot').content == b'snap'
+    assert client.get(f'/api/records/{rid}/plate_image').status_code == 404    # file gone
+    assert client.get(f'/api/records/{rid + 1}/snapshot').status_code == 404   # no such record
+    assert client.get(f'/api/records/{rid}/camera').status_code == 422         # not a photo field

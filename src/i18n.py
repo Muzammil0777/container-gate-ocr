@@ -174,6 +174,7 @@ TEXT = {
     'go_cameras': ('Set up a camera', 'إعداد كاميرا'),
     'start_detection': ('Start detection', 'بدء الكشف'),
     'stat_total': ('Trucks today', 'شاحنات اليوم'),
+    'stat_trucks': ('Trucks', 'الشاحنات'),
     'stat_in': ('Came in', 'دخلت'),
     'stat_out': ('Went out', 'خرجت'),
     'stat_review': ('To check', 'للمراجعة'),
@@ -187,6 +188,14 @@ TEXT = {
                   '"راجع" تعني أن القراءة قد تكون خاطئة. افتح السجلات لرؤية الصورة وتصحيحها.'),
     'confirmed': ('Confirmed', 'مؤكد'),
     'not_confirmed': ('Not confirmed', 'غير مؤكد'),
+    # Web app: Records
+    'prev_day': ('Previous day', 'اليوم السابق'),
+    'next_day': ('Next day', 'اليوم التالي'),
+    'go_today': ('Back to today', 'العودة إلى اليوم'),
+    'only_to_check': ('Only trucks to check', 'الشاحنات التي تحتاج مراجعة فقط'),
+    'none_to_check': ('Nothing to check on this day.', 'لا يوجد ما يحتاج مراجعة في هذا اليوم.'),
+    'tap_truck': ('Tap a truck to see its photos.', 'اضغط على شاحنة لعرض صورها.'),
+    'open_full': ('Open full size', 'فتح بالحجم الكامل'),
 }
 
 
