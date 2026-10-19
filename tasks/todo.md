@@ -44,19 +44,19 @@ real plate events (event text + plate photo) from its ISAPI event stream into
 
 ## Phase 1: Lane foundation
 
-### Task 3: Database: verification and lane columns
+### Task 3: Database: verification and lane columns ✅
 **Description:** Add columns `lane`, `cams_agree` (container cameras that agreed),
 `cams_expected`, `plate_source` (`anpr` / `ocr`), `snapshot2` (second angle). Existing
 databases get them on start (additive `ALTER TABLE`). `needs_review` also flags a container
 read by fewer cameras than expected. Excel and ZIP get a *Verified* column and the 2nd photo.
 
 **Acceptance criteria:**
-- [ ] A database file from the current version opens, upgrades, and keeps every row
-- [ ] Excel shows *Verified by 2 cameras* / *1 camera only*; single-camera lanes look as today
-- [ ] Merging and deduplication (`Store.add`) unchanged for single-camera sites
+- [x] A database file from the current version opens, upgrades, and keeps every row
+- [x] Excel shows *Verified by 2 cameras* / *1 camera only*; single-camera lanes look as today
+- [x] Merging and deduplication (`Store.add`) unchanged for single-camera sites
 
 **Verification:** tests: upgrade a saved old-format database; Excel column; needs_review cases.
-**Dependencies:** None. **Files:** `src/store.py`, `src/i18n.py`, `tests/test_gate.py`, `tests/test_store_upgrade.py`. **Scope:** M
+**Dependencies:** None. **Files:** `src/store.py`, `src/i18n.py`, `src/gate.py`, `server.py` (2nd photo path hidden), `tests/test_store.py`, `tests/test_server.py`. **Scope:** M
 
 ### Task 4: Settings: lanes and camera roles
 **Description:** `cameras.json` cameras get `lane` and `role`; `lanes` holds direction and

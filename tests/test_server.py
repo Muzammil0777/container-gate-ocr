@@ -92,9 +92,11 @@ def test_live_picture_only_for_enabled_cameras(site):
 def test_records_hide_photo_paths(site):
     _, store = site
     store.add({'date': '2026-10-17', 'time': '09:00:00', 'direction': 'IN', 'plate': '3231 UTA',
-               'plate_verified': 1, 'snapshot': r'C:\gate\logs\snapshots\a.jpg'})
+               'plate_verified': 1, 'snapshot': r'C:\gate\logs\snapshots\a.jpg',
+               'snapshot2': r'C:\gate\logs\snapshots\b.jpg'})
     [row] = client.get('/api/records?day=2026-10-17').json()
     assert row['plate'] == '3231 UTA' and row['snapshot'] is True and row['plate_image'] is False
+    assert row['snapshot2'] is True and 'gate' not in str(row)                  # no paths on this computer
     assert row['needs_review'] is True                                          # no container
     assert client.get('/api/records?day=2026-10-18').json() == []
     assert client.get('/api/records?day=yesterday').status_code == 422

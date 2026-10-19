@@ -10,18 +10,29 @@ from pathlib import Path
 
 from openpyxl import Workbook
 from openpyxl.styles import Font
+from openpyxl.utils import get_column_letter
 
 from src.i18n import t
 from src.iso6346 import check_digit, format_code, normalize
 from src.saudi_plate import format_plate, parse_latin, to_arabic
 
+# Gate lanes (several cameras per truck): added to existing databases on start
+LANE_FIELDS = {'lane': 'TEXT',
+               'cams_agree': 'INTEGER',     # container cameras whose reading agreed with the row's
+               'cams_expected': 'INTEGER',  # container cameras in the lane (2 = can be verified)
+               'plate_source': 'TEXT',      # 'anpr' (the plate camera's own reading) or 'ocr'
+               'snapshot2': 'TEXT'}         # the second container camera's photo
 FIELDS = ['date', 'time', 'direction', 'plate', 'plate_ar', 'plate_verified', 'container',
           'check_digit_ok', 'size_type', 'camera', 'location', 'confidence', 'snapshot',
-          'plate_image', 'corrected']
+          'plate_image', 'corrected', *LANE_FIELDS]
 # Excel columns (same order as before) and how each value is shown
 COLUMNS = ['date', 'time', 'direction', 'plate', 'plate_ar', 'plate_check', 'container',
            'check_digit', 'size_type', 'camera', 'location', 'confidence', 'snapshot', 'plate_image']
-LINKS = ('snapshot', 'plate_image')
+# a site with two container cameras in a lane gets two more: verified, and the second photo
+LANE_COLUMNS = COLUMNS[:8] + ['cams_verified'] + COLUMNS[8:] + ['snapshot2']
+LINKS = ('snapshot', 'plate_image', 'snapshot2')
+WIDTHS = {'date': 11, 'time': 9, 'direction': 9, 'plate': 11, 'plate_ar': 14, 'plate_check': 20, 'container': 16,
+          'check_digit': 10, 'cams_verified': 20, 'size_type': 9, 'camera': 16, 'location': 18, 'confidence': 10}
 
 SCHEMA = '''CREATE TABLE IF NOT EXISTS trucks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,6 +62,10 @@ class Store:
         self.db.row_factory = sqlite3.Row
         self.db.execute('PRAGMA journal_mode=WAL')  # readers never block the writer
         self.db.executescript(SCHEMA)
+        have = {r['name'] for r in self.db.execute('PRAGMA table_info(trucks)')}
+        for col, kind in LANE_FIELDS.items():  # an older database: add the new columns, keep every row
+            if col not in have:
+                self.db.execute(f'ALTER TABLE trucks ADD COLUMN {col} {kind}')
         self.lock = threading.Lock()
 
     def add(self, row, dedupe_s=300):
@@ -65,9 +80,9 @@ class Store:
                 return 'added', cur.lastrowid
             updates = {}
             if row.get('plate') and not prev['plate']:
-                updates.update({k: row.get(k) for k in ('plate', 'plate_ar', 'plate_verified', 'plate_image')})
+                updates.update({k: row.get(k) for k in ('plate', 'plate_ar', 'plate_verified', 'plate_image', 'plate_source')})
             if row.get('container') and (not prev['container'] or (not prev['check_digit_ok'] and row.get('check_digit_ok'))):
-                updates.update({k: row.get(k) for k in ('container', 'check_digit_ok', 'size_type')})
+                updates.update({k: row.get(k) for k in ('container', 'check_digit_ok', 'size_type', 'cams_agree', 'cams_expected')})
             if not updates:
                 return 'duplicate', prev['id']
             self._update(prev['id'], updates)
@@ -91,7 +106,7 @@ class Store:
 
     def correct(self, rid, **fields):
         """A person fixed a reading (plate, plate_ar, container, ...): save it and mark the row."""
-        allowed = {k: v for k, v in fields.items() if k in FIELDS and k not in ('date', 'time', 'snapshot')}
+        allowed = {k: v for k, v in fields.items() if k in FIELDS and k not in ('date', 'time', *LINKS, *LANE_FIELDS)}
         with self.lock, self.db:
             self._update(rid, {**allowed, 'corrected': 1})
 
@@ -138,11 +153,18 @@ def parse_fix(plate, container, direction):
 
 def needs_review(row):
     """Readings worth a second look: plate not confirmed by its Arabic row, container check
-    digit not confirmed, or either one missing. Rows a person already fixed are fine."""
+    digit not confirmed, either one missing, or (in a lane with two container cameras) the
+    container read by only one of them. Rows a person already fixed are fine."""
     if row.get('corrected'):
         return False
     return (not row.get('plate') or not row.get('plate_verified')
-            or not row.get('container') or not row.get('check_digit_ok'))
+            or not row.get('container') or not row.get('check_digit_ok') or not cams_verified(row))
+
+
+def cams_verified(row):
+    """False only when fewer of the lane's container cameras agreed on the container than it has."""
+    expected = row.get('cams_expected') or 0
+    return expected < 2 or (row.get('cams_agree') or 0) >= expected
 
 
 def display(row, lang='en'):
@@ -157,31 +179,35 @@ def display(row, lang='en'):
         'check_digit': '' if not row.get('container') else yes_no(row.get('check_digit_ok')),
         'size_type': row.get('size_type') or '', 'camera': row.get('camera') or '',
         'location': row.get('location') or '', 'confidence': row.get('confidence'),
+        'cams_verified': '' if not row.get('container') or (row.get('cams_expected') or 0) < 2
+        else t('cams_agreed', lang, n=row.get('cams_agree')) if cams_verified(row) else t('one_cam_only', lang),
         'snapshot': row.get('snapshot') or '', 'plate_image': row.get('plate_image') or '',
+        'snapshot2': row.get('snapshot2') or '',
     }
 
 
 def to_excel(rows, lang='en', links=None):
     """Rows as .xlsx bytes in the gate-log layout. links maps each LINKS column to a function
     turning the stored image path into the hyperlink target (default: the path itself)."""
+    columns = LANE_COLUMNS if any((r.get('cams_expected') or 0) >= 2 for r in rows) else COLUMNS
     wb = Workbook()
     ws = wb.active
     ws.title = t('sheet', lang)
     ws.sheet_view.rightToLeft = lang == 'ar'
-    ws.append([t(c, lang) for c in COLUMNS])
+    ws.append([t(c, lang) for c in columns])
     for cell in ws[1]:
         cell.font = Font(bold=True)
     ws.freeze_panes = 'A2'
     for row in rows:
         d = display(row, lang)
-        ws.append([None if c in LINKS else d[c] for c in COLUMNS])
+        ws.append([None if c in LINKS else d[c] for c in columns])
         for key in LINKS:
-            if d[key]:
-                cell = ws.cell(row=ws.max_row, column=COLUMNS.index(key) + 1)
+            if key in columns and d[key]:
+                cell = ws.cell(row=ws.max_row, column=columns.index(key) + 1)
                 target = (links or {}).get(key, lambda p: p)(d[key])
                 cell.hyperlink, cell.value, cell.style = target, t('open_image', lang), 'Hyperlink'
-    for col, width in zip('ABCDEFGHIJKLMN', (11, 9, 9, 11, 14, 20, 16, 10, 9, 16, 18, 10, 12, 12)):
-        ws.column_dimensions[col].width = width
+    for i, c in enumerate(columns, 1):
+        ws.column_dimensions[get_column_letter(i)].width = WIDTHS.get(c, 12)
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()

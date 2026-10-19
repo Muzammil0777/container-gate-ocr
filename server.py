@@ -39,7 +39,7 @@ from src.gate import GateLog, GateTracker
 from src.i18n import LANGUAGES, TEXT
 from src.iso6346 import format_code
 from src.recognizer import Recognizer, draw
-from src.store import Store, needs_review, parse_fix, to_excel, to_zip
+from src.store import LINKS, Store, needs_review, parse_fix, to_excel, to_zip
 
 WEB = config.ROOT / 'web' / 'dist'
 XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -586,8 +586,7 @@ def video_excel(job_id: str, lang: str = 'en'):
 
 def _public(row):
     """A stored row for the browser: photo paths on this computer are replaced by yes/no."""
-    return {**row, 'needs_review': needs_review(row),
-            'snapshot': bool(row.get('snapshot')), 'plate_image': bool(row.get('plate_image'))}
+    return {**row, 'needs_review': needs_review(row), **{k: bool(row.get(k)) for k in LINKS}}
 
 
 @app.get('/api/records')

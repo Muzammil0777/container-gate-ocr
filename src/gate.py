@@ -203,7 +203,7 @@ class GateLog:
         if row['status'] != 'added':  # the earlier row keeps its photos; drop the unused new ones
             kept = self.store.get(row['id'])
             for key in LINKS:
-                if row[key] and row[key] != kept[key]:
+                if row.get(key) and row[key] != kept[key]:
                     Path(row[key]).unlink(missing_ok=True)
         if row['status'] != 'duplicate':
             self.changed(row['date'])

@@ -18,6 +18,8 @@ TEXT = {
     'confidence': ('Confidence', 'الدقة'),
     'snapshot': ('Snapshot', 'الصورة'),
     'plate_image': ('Plate Image', 'صورة اللوحة'),
+    'cams_verified': ('Container cameras', 'كاميرات الحاوية'),
+    'snapshot2': ('Snapshot (2nd camera)', 'الصورة (الكاميرا الثانية)'),
     # Excel values
     'IN': ('IN', 'دخول'),
     'OUT': ('OUT', 'خروج'),
@@ -25,6 +27,8 @@ TEXT = {
     'no': ('NO', 'لا'),
     'verified': ('Arabic + Latin match', 'مطابق عربي ولاتيني'),
     'latin_only': ('Latin only', 'لاتيني فقط'),
+    'cams_agreed': ('Verified by {n} cameras', 'مؤكد من {n} كاميرات'),
+    'one_cam_only': ('1 camera only', 'كاميرا واحدة فقط'),
     'open_image': ('open image', 'فتح الصورة'),
     'sheet': ('Gate log', 'سجل البوابة'),
     # Web app: shared
