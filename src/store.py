@@ -44,7 +44,8 @@ SCHEMA = '''CREATE TABLE IF NOT EXISTS trucks (
     snapshot TEXT, plate_image TEXT,
     corrected INTEGER DEFAULT 0                   -- 1 once a person fixed the reading
 );
-CREATE INDEX IF NOT EXISTS trucks_date ON trucks(date, time);'''
+CREATE INDEX IF NOT EXISTS trucks_date ON trucks(date, time);
+CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);  -- app state (license, clock guard)'''
 
 
 def _serial(container):
@@ -109,6 +110,14 @@ class Store:
         allowed = {k: v for k, v in fields.items() if k in FIELDS and k not in ('date', 'time', *LINKS, *LANE_FIELDS)}
         with self.lock, self.db:
             self._update(rid, {**allowed, 'corrected': 1})
+
+    def meta_get(self, k):
+        r = self.db.execute('SELECT v FROM meta WHERE k = ?', (k,)).fetchone()
+        return r[0] if r else None
+
+    def meta_set(self, k, v):
+        with self.lock, self.db:
+            self.db.execute('INSERT INTO meta (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v', (k, v))
 
     def get(self, rid):
         r = self.db.execute('SELECT * FROM trucks WHERE id = ?', (rid,)).fetchone()

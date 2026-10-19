@@ -170,19 +170,19 @@ for this gate* and *Add the plate camera*, each with the channel pictures; both 
 
 ## Phase 4: License in the app
 
-### Task 11: License check (test-driven)
+### Task 11: License check (test-driven) ✅
 **Description:** `src/license.py`: verify a key (Ed25519, public key in the app, key id for
 rotation), machine code from the Windows machine ID, states (trial (14 days from first start) /
 active / expiring (30 days before) / grace (14 days after) / expired / no license after trial)
 and the clock guard (latest time seen, kept in the database).
 
 **Acceptance criteria:**
-- [ ] A changed character, another machine's key, or an expired key are refused with a plain reason
-- [ ] States change on the right days (30 days before, end date, end of grace)
-- [ ] Clock set back by a week: still counts from the latest time seen
+- [x] A changed character, another machine's key, or an expired key are refused with a plain reason
+- [x] States change on the right days (30 days before, end date, end of grace)
+- [x] Clock set back by a week: still counts from the latest time seen
 
-**Verification:** tests first, with keys made by a test-only key pair.
-**Dependencies:** None (can start in parallel with Phase 1). **Files:** `src/license.py`, `tests/test_license.py`, `requirements.txt`. **Scope:** M
+**Verification:** 17 tests written first (failing), with keys made by a test-only key pair. Stored in a new `meta` table in gate.db (key, trial start, latest time seen). `PUBLIC_KEYS` is empty until Task 12 makes your real key pair.
+**Dependencies:** None (can start in parallel with Phase 1). **Files:** `src/license.py`, `src/store.py` (meta table), `tests/test_license.py`, `requirements.txt`. **Scope:** M
 
 ### Task 12: Your license tool
 **Description:** `tools/license_tool.py`: `keygen` (once; private key saved outside the repo),
