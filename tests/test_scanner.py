@@ -16,13 +16,16 @@ def test_full_scan_then_follow_the_truck_as_it_moves():
     s = Scanner(Recognizer(), full_every_s=1.5)
     first = s(img, 0)
     assert first['mode'] == 'full' and [c['code'] for c in first['codes']] == ['MRSU4425761']
+    follow_ms = []
     for i, now in enumerate((0.3, 0.6, 0.9), 1):
         moved = np.roll(img, (6 * i, 9 * i), axis=(0, 1))  # the truck moves a little each frame
         out = s(moved, now)
         assert out['mode'] == 'follow', now
         assert [c['code'] for c in out['codes']] == ['MRSU4425761'], now
         assert [p['plate'] for p in out['plates']] == ['3231 UTA'], now
-        assert out['ms'] < first['ms'] * 0.9                      # cheaper than a full scan
+        follow_ms.append(out['ms'])
+    # cheaper than a full scan; the median, since the first follow also warms up its detector
+    assert sorted(follow_ms)[1] < first['ms'] * 0.9, follow_ms
     assert s(img, 1.6)['mode'] == 'full'                           # periodic full scan
 
 
