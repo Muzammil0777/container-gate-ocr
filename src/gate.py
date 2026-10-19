@@ -25,15 +25,30 @@ class _Group:
             self.best = (item['score'], item, frame.copy())
 
 
+class _CamGroup(_Group):
+    """A _Group read by several cameras (items carry 'cam'): also keeps each camera's best photo."""
+
+    def __init__(self, key):
+        super().__init__(key)
+        self.by_cam = {}  # camera -> (score, frame)
+
+    def add(self, item, frame, now, window_s):
+        super().add(item, frame, now, window_s)
+        cam = item['cam']
+        if cam not in self.by_cam or item['score'] > self.by_cam[cam][0]:
+            self.by_cam[cam] = (item['score'], frame.copy())
+
+
 class _Groups:
-    def __init__(self, key, same):
-        self.key, self.same, self.groups = key, same, []
+    def __init__(self, key, same, group=_Group):
+        self.key, self.same, self.group, self.groups = key, same, group, []
 
     def add(self, item, frame, now, window_s):
         k = self.key(item)
         g = next((g for g in self.groups if self.same(k, g.key)), None)
         if g is None:
-            g = _Group(k)
+            g = self.group(k)
+            g.first = now
             self.groups.append(g)
         g.add(item, frame, now, window_s)
 
@@ -74,12 +89,153 @@ def _same_plate(a, b):
     return da.endswith(db) or db.endswith(da)
 
 
-class GateTracker:
-    """A truck passing a camera is seen in many frames. Reads of its container code and of
-    its plate are grouped (misreads of the same one vote together) and combined into one
-    reading each (consensus across frames, the check digit settles look-alike digits). A
-    reading is confirmed after `min_hits` reads within `window_s` (2x for a container whose
-    check digit can't be confirmed). One event is emitted per truck visit:
+class LaneTracker:
+    """A gate lane: the cameras that see the same truck, e.g. two reading the container from
+    different angles and one (ANPR) reading the plate. Their reads are combined into one event
+    per truck visit, like GateTracker does for one camera:
+    - container reads from all container cameras vote together (consensus, check digit);
+      `cams_agree` counts the cameras that read the final number exactly at least once, so a
+      container seen the same by both cameras is verified (`cams_agree == cams_expected`)
+    - the plate comes from the plate cameras only, the container from the container cameras
+    - a visit waits up to `pair_window_s` for the part it is missing (the plate camera sees the
+      front, the container cameras the rear), and up to `max_wait_s` for the second container
+      camera to agree; a second, different confirmed plate means the next truck has arrived
+    - one event per truck: code, plate, frame (best container photo), frame2 (the other
+      container camera's photo), plate_frame, cams_agree, cams_expected
+    A lane of one camera that reads both behaves exactly like GateTracker. cameras: [(name,
+    role)] with role 'container', 'plate' or 'both'. update() may be called from each camera's
+    own thread."""
+
+    def __init__(self, cameras, min_hits=2, window_s=15, cooldown_s=300, accept_unverified=True,
+                 gap_s=5, max_wait_s=10, pair_window_s=30):
+        self.roles = dict(cameras)
+        self.reads_codes = any(r in ('container', 'both') for r in self.roles.values())
+        self.reads_plates = any(r in ('plate', 'both') for r in self.roles.values())
+        self.cams_expected = sum(r in ('container', 'both') for r in self.roles.values())
+        self.pair_window_s = pair_window_s if len(self.roles) > 1 else 0  # one camera: GateTracker's rules
+        self.min_hits, self.window_s, self.cooldown_s = min_hits, window_s, cooldown_s
+        self.accept_unverified, self.gap_s, self.max_wait_s = accept_unverified, gap_s, max_wait_s
+        self.logged = {}  # 'serial' or 'plate' key -> last event time
+        self.visit = None
+        self.lock = threading.Lock()
+
+    def update(self, camera, codes, frame, now=None, plates=()):
+        """Feed one camera's reads of one frame; returns a list of events. Call it for every
+        processed frame, also empty ones, so visits can end."""
+        now = time.time() if now is None else now
+        role = self.roles.get(camera)
+        with self.lock:
+            codes = [{**c, 'cam': camera} for c in codes
+                     if role in ('container', 'both') and not self._cooling(c['code'][4:10], now)]
+            plates = [{**p, 'cam': camera} for p in plates
+                      if role in ('plate', 'both') and not self._cooling(p['digits'] + p['letters'], now)]
+            events = []
+            v = self.visit
+            if v and self._over(v, now):
+                events += self._emit(now)
+                v = None
+            if codes or plates:
+                if v is None:
+                    v = self.visit = self._new_visit(now)
+                v['last'] = now
+                for c in codes:
+                    v['codes'].add(c, frame, now, self.window_s)
+                for p in plates:
+                    v['plates'].add(p, frame, now, self.window_s)
+                events += self._next_truck(now)
+                v = self.visit
+            if v:
+                code, plate = self._confirmed(v)
+                if code or plate:
+                    v['first_ok'] = v['first_ok'] or now
+                    complete = (code or not self.reads_codes) and (plate or not self.reads_plates)
+                    agreed = self.cams_expected <= 1 or (code and self._agree(code) >= self.cams_expected)
+                    waited = now - v['first_ok'] >= self.max_wait_s
+                    if (complete and (agreed or waited)) or \
+                            (waited and now - v['start'] >= self.pair_window_s):
+                        events += self._emit(now)
+            return events
+
+    def flush(self, now=None):
+        """Emit the visit in progress (end of a video file, or a camera stopped)."""
+        with self.lock:
+            return self._emit(time.time() if now is None else now)
+
+    def _new_visit(self, now):
+        return {'codes': _Groups(lambda c: c['code'], same_container, _CamGroup),
+                'plates': _Groups(lambda p: p['digits'] + p['letters'], _same_plate, _CamGroup),
+                'start': now, 'last': now, 'first_ok': None}
+
+    def _over(self, v, now):
+        """Nothing new for gap_s, and not waiting (within pair_window_s) for a missing part."""
+        if now - v['last'] <= self.gap_s:
+            return False
+        code, plate = self._confirmed(v)
+        missing = (self.reads_codes and not code) or (self.reads_plates and not plate)
+        return not missing or now - v['start'] >= self.pair_window_s
+
+    def _next_truck(self, now):
+        """Two different confirmed plates in one visit: the first truck is done, the visit of
+        the next one starts with its plate (its container comes after its plate)."""
+        v, n = self.visit, self.min_hits
+        ok = [g for g in v['plates'].groups if len(g.reads) >= n]
+        if len(ok) < 2:
+            return []
+        nxt = max(ok, key=lambda g: g.first)
+        v['plates'].groups.remove(nxt)
+        events = self._emit(now)
+        self.visit = self._new_visit(now)
+        self.visit['plates'].groups.append(nxt)
+        return events
+
+    def _cooling(self, key, now):
+        return now - self.logged.get(key, -1e18) < self.cooldown_s
+
+    def _confirmed(self, v):
+        n = self.min_hits
+        code = v['codes'].confirmed(_resolve_code, lambda c: n if c['valid'] else 2 * n)
+        if code and not code[0]['valid'] and not self.accept_unverified:
+            code = None
+        plate = v['plates'].confirmed(_resolve_plate, lambda p: n)
+        return code, plate
+
+    @staticmethod
+    def _agree(code):
+        """Container cameras that read the final number exactly, with a valid check digit."""
+        item, group = code
+        return len({it['cam'] for _, it in group.reads if it['code'] == item['code'] and it['valid']})
+
+    def _emit(self, now):
+        v = self.visit
+        if not v:
+            return []
+        code, plate = self._confirmed(v)
+        self.visit = None
+        if not (code or plate):
+            return []
+        if code:
+            self.logged[code[0]['code'][4:10]] = now
+        if plate:
+            self.logged[plate[0]['digits'] + plate[0]['letters']] = now
+        frame = frame2 = None
+        if code:
+            best_cam = code[1].best[1]['cam']
+            frame = code[1].best[2]
+            others = sorted((s, f) for cam, (s, f) in code[1].by_cam.items() if cam != best_cam)
+            frame2 = others[-1][1] if others else None
+        return [{'code': code and code[0], 'plate': plate and plate[0],
+                 'frame': frame if frame is not None else plate[1].best[2],
+                 'frame2': frame2, 'plate_frame': plate and plate[1].best[2],
+                 'cams_agree': self._agree(code) if code else None, 'cams_expected': self.cams_expected}]
+
+
+class GateTracker(LaneTracker):
+    """One camera reading both container and plate (a lane of one camera). A truck passing it
+    is seen in many frames. Reads of its container code and of its plate are grouped (misreads
+    of the same one vote together) and combined into one reading each (consensus across
+    frames, the check digit settles look-alike digits). A reading is confirmed after
+    `min_hits` reads within `window_s` (2x for a container whose check digit can't be
+    confirmed). One event is emitted per truck visit:
     - as soon as both are confirmed, or
     - with whatever was confirmed after `max_wait_s`, or when nothing new has been read for
       `gap_s` (truck left, or one without container / with an unreadable plate).
@@ -88,68 +244,12 @@ class GateTracker:
 
     def __init__(self, min_hits=2, window_s=15, cooldown_s=300, accept_unverified=True,
                  gap_s=5, max_wait_s=10):
-        self.min_hits, self.window_s, self.cooldown_s = min_hits, window_s, cooldown_s
-        self.accept_unverified, self.gap_s, self.max_wait_s = accept_unverified, gap_s, max_wait_s
-        self.logged = {}   # 'serial' or 'plate' key -> last event time
-        self.visit = None
+        super().__init__([('camera', 'both')], min_hits, window_s, cooldown_s, accept_unverified,
+                         gap_s, max_wait_s)
 
     def update(self, codes, frame, now=None, plates=()):
-        """Feed one frame's reads; returns a list of events. An event is a dict with
-        code (or None), plate (or None), frame, plate_frame."""
-        now = time.time() if now is None else now
-        codes = [c for c in codes if not self._cooling(c['code'][4:10], now)]
-        plates = [p for p in plates if not self._cooling(p['digits'] + p['letters'], now)]
-        events = []
-        v = self.visit
-        if v and now - v['last'] > self.gap_s:  # visit over
-            events += self._emit(now)
-            v = None
-        if codes or plates:
-            if v is None:
-                v = self.visit = {'codes': _Groups(lambda c: c['code'], same_container),
-                                  'plates': _Groups(lambda p: p['digits'] + p['letters'], _same_plate),
-                                  'last': now, 'first_ok': None}
-            v['last'] = now
-            for c in codes:
-                v['codes'].add(c, frame, now, self.window_s)
-            for p in plates:
-                v['plates'].add(p, frame, now, self.window_s)
-        if v:
-            code, plate = self._confirmed()
-            if code or plate:
-                v['first_ok'] = v['first_ok'] or now
-                if (code and plate) or now - v['first_ok'] >= self.max_wait_s:
-                    events += self._emit(now)
-        return events
-
-    def flush(self, now=None):
-        """Emit the visit in progress (end of a video file)."""
-        return self._emit(time.time() if now is None else now)
-
-    def _cooling(self, key, now):
-        return now - self.logged.get(key, -1e18) < self.cooldown_s
-
-    def _confirmed(self):
-        v, n = self.visit, self.min_hits
-        code = v['codes'].confirmed(_resolve_code, lambda c: n if c['valid'] else 2 * n)
-        if code and not code[0]['valid'] and not self.accept_unverified:
-            code = None
-        plate = v['plates'].confirmed(_resolve_plate, lambda p: n)
-        return code, plate
-
-    def _emit(self, now):
-        if not self.visit:
-            return []
-        code, plate = self._confirmed()
-        self.visit = None
-        if not (code or plate):
-            return []
-        if code:
-            self.logged[code[0]['code'][4:10]] = now
-        if plate:
-            self.logged[plate[0]['digits'] + plate[0]['letters']] = now
-        return [{'code': code and code[0], 'plate': plate and plate[0],
-                 'frame': (code or plate)[1].best[2], 'plate_frame': plate and plate[1].best[2]}]
+        """Feed one frame's reads; returns a list of events (see LaneTracker)."""
+        return super().update('camera', codes, frame, now, plates)
 
 
 class GateLog:

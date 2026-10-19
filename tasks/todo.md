@@ -70,7 +70,7 @@ without a lane is its own lane with role `both`.
 **Verification:** tests for old settings, a 3-camera lane, invalid cases.
 **Dependencies:** None. **Files:** `src/lanes.py`, `src/i18n.py` (problem texts), `tests/test_lanes.py`. **Scope:** S
 
-### Task 5: Lane tracker: one truck from several cameras (test-driven)
+### Task 5: Lane tracker: one truck from several cameras (test-driven) ✅
 **Description:** `LaneTracker` in `src/gate.py` takes reads from all cameras of a lane
 (camera, role, time, codes, plates, frame) and emits one event per truck: container by
 consensus over all container cameras, `cams_agree`, plate from plate cameras (or an ANPR
@@ -78,14 +78,14 @@ event, already confirmed), best photo per camera. Reuses `_Groups`, `consensus_c
 `_same_plate`. Thread-safe (cameras run in separate threads).
 
 **Acceptance criteria:**
-- [ ] Both cameras read the same code: one event, `cams_agree = 2`
-- [ ] One camera misses a digit, the other reads it: correct code, verified when the
+- [x] Both cameras read the same code: one event, `cams_agree = 2`
+- [x] One camera misses a digit, the other reads it: correct code, verified when the
       check digit and the other camera agree
-- [ ] Plate first, container 20 s later: one event; container only / plate only: one event,
+- [x] Plate first, container 20 s later: one event; container only / plate only: one event,
       not verified; a different plate while the visit has one: two trucks
-- [ ] Existing `GateTracker` tests still pass (single-camera lanes use the same rules)
+- [x] Existing `GateTracker` tests still pass (single-camera lanes use the same rules)
 
-**Verification:** tests written first, from these cases and from real misreads in `logs/corrections.jsonl` examples.
+**Verification:** 10 tests written first (failing), then the code; a single-camera lane was checked to give exactly GateTracker's events on today's scenarios, after which GateTracker became a lane of one camera (one implementation; today's tests unchanged and passing). `cams_agree` counts cameras that read the final number exactly at least once. Real misreads (`logs/corrections.jsonl`) to add once a site has them.
 **Dependencies:** Task 3 (event fields). **Files:** `src/gate.py`, `tests/test_lane.py`. **Scope:** M
 
 ### Checkpoint: Lane logic
