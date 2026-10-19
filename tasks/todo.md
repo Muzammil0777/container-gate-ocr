@@ -1,244 +1,295 @@
-# Tasks: React app for Container Gate OCR
+# Tasks: Gate lanes (multi-camera + ANPR) and licensing
 
-See [plan.md](plan.md) for the architecture and decisions.
+See [plan.md](plan.md) for the design, risks and open questions.
+Previous tasks (React app, done): [archive/todo-react-app.md](archive/todo-react-app.md).
 
 Checks used below:
 - **Tests:** `py -3.12 -m pytest`
-- **Build:** `cd web && npm run build`
-- **Run:** `py -3.12 server.py` then open http://localhost:8000
+- **Build:** `cd web && npm run build` (commit `web/dist` after any `web/src` change)
+- **Run:** `py -3.12 server.py --open` and `py -3.12 cctv.py --config cameras.json`
 
 ---
 
-## Phase 1: Foundation
+## Phase 0: Evidence first
 
-### Task 1: Move shared helpers out of app.py ✅
-**Description:** `load_config`, `save_config`, `service_status`, `start_service`, `grab_frame`
-and saving a correction moved from `app.py` to `src/config.py` (not `src/site.py`: `site` is
-the name of a built-in Python module). The correction check is `parse_fix` in `src/store.py`,
-next to `Store.correct`. `app.py` imports them and behaves the same.
-
-**Acceptance criteria:**
-- [x] `app.py` has no copies of these helpers; Streamlit app works as before
-- [x] Correction checking is one function: text in → fields to save, or error text keys
-- [x] `tests/test_fix.py` covers good/bad plate, good/bad container, wrong check digit, empty fields, and saving (database + Excel + corrections log)
-
-**Verification:** 58 tests pass; Streamlit app starts and Records renders with no errors.
-**Dependencies:** None
-**Files:** `src/config.py` (new), `src/store.py`, `app.py`, `tests/test_fix.py` (new)
-**Scope:** S
-
-### Task 2: API server and React shell ✅
-**Description:** `server.py` (FastAPI) serves `/api/text`, `/api/health` and the built React
-app from `web/dist`. `web/` is a Vite + React + TypeScript + Mantine app with a header (title,
-English/العربية switch), four sections (Live, Records, Cameras, Test) as empty pages, and
-right-to-left layout in Arabic. Language choice is remembered in the browser.
+### Task 1: Multi-camera speed test on this laptop
+**Description:** Extend `bench.py` to replay several recordings at the same time through the
+real pipeline (shared OCR lock, reading areas, follow mode), like 2-3 live cameras per lane.
+Report looks per second per camera and trucks found, for 1, 2, 3 and 4 streams.
 
 **Acceptance criteria:**
-- [x] One command starts one server on one port that serves both the API and the app
-- [x] All visible text comes from `src/i18n.py`; Arabic switches the whole layout right-to-left
-- [x] OCR imports load without the onnxruntime DLL error under uvicorn on this laptop
+- [ ] `bench.py a.mp4 b.mp4 --realtime` runs both together and prints looks/s per stream
+- [ ] Numbers recorded in plan.md for this laptop, with a recommendation (looks/s,
+      reading areas, which cameras can share the CPU, hardware)
 
-**Verification:** Build passes; Run → shell visible, language switch works; `tests/test_server.py`
-checks `/api/health` and `/api/text` with FastAPI's TestClient.
-**Dependencies:** Task 1
-**Files:** `server.py`, `requirements.txt`, `web/` (package.json, vite config, `src/main.tsx`, `src/App.tsx`, `src/api.ts` with the `useT()` text hook), `src/i18n.py`, `.gitignore` (web/dist is committed), `tests/test_server.py`
-**Scope:** M
+**Verification:** run on the recordings from Open Question 2 in plan.md (or existing ones until then).
+**Dependencies:** None. **Files:** `bench.py`, `tasks/plan.md`. **Scope:** S
 
-### Checkpoint: Foundation
-- [ ] Tests pass, build passes, Streamlit app still works
-- [ ] Review the look of the shell with the user before building pages
+### Task 2: ANPR camera test (real camera)
+**Description:** Connect to the ANPR camera, confirm it reads Saudi plates, and capture a few
+real plate events (event text + plate photo) from its ISAPI event stream into
+`tests/fixtures/anpr/` (passwords removed). Decide: camera's own reading (b) or ours (a).
+
+**Acceptance criteria:**
+- [ ] At least 3 real events saved, including night/IR if possible
+- [ ] Plate text format documented (how Arabic letters/digits arrive)
+
+**Verification:** saved files open and match what the camera's web page shows.
+**Dependencies:** the camera on the network. **Files:** `tests/fixtures/anpr/`, `tasks/plan.md`. **Scope:** S
+
+### Checkpoint: Decide hardware and ANPR mode
+- [ ] You choose hardware and ANPR mode based on Tasks 1-2
 
 ---
 
-## Phase 2: Daily use
+## Phase 1: Lane foundation
 
-### Task 3: Live page ✅
-**Description:** Camera tiles with the live annotated image (refreshing every 2 s) and a clear
-status per camera: green "Working", grey "Stopped", red "No picture for N s". If detection
-isn't running, one big "Start detection" button. Below: today's counts (trucks, in, out,
-need checking) and today's trucks, newest first, and "Download today's Excel".
-API: `GET /api/status`, `GET /api/live/{camera}.jpg`, `POST /api/service/start`,
-`GET /api/records?day=`, `GET /api/excel/day/{day}`.
+### Task 3: Database: verification and lane columns
+**Description:** Add columns `lane`, `cams_agree` (container cameras that agreed),
+`cams_expected`, `plate_source` (`anpr` / `ocr`), `snapshot2` (second angle). Existing
+databases get them on start (additive `ALTER TABLE`). `needs_review` also flags a container
+read by fewer cameras than expected. Excel and ZIP get a *Verified* column and the 2nd photo.
 
 **Acceptance criteria:**
-- [x] A truck logged by `cctv.py` appears within ~3 s without reloading the page
-- [x] Camera offline / service stopped states are shown in plain words with colour + icon
-- [x] Downloaded Excel is identical to what `to_excel` produces today
+- [ ] A database file from the current version opens, upgrades, and keeps every row
+- [ ] Excel shows *Verified by 2 cameras* / *1 camera only*; single-camera lanes look as today
+- [ ] Merging and deduplication (`Store.add`) unchanged for single-camera sites
 
-**Verification:** 5 endpoint tests; checked on a copy of the app with a two-truck test video: "Start detection" started the service, both trucks appeared live without reloading, in English and Arabic.
-**Dependencies:** Task 2
-**Files:** `server.py`, `web/src/pages/Live.tsx`, `web/src/components/TruckTable.tsx`, `web/src/api.ts` (`usePoll`, `Truck`), `src/i18n.py`, `tests/test_server.py`
-**Scope:** M
+**Verification:** tests: upgrade a saved old-format database; Excel column; needs_review cases.
+**Dependencies:** None. **Files:** `src/store.py`, `src/i18n.py`, `tests/test_gate.py`, `tests/test_store_upgrade.py`. **Scope:** M
 
-### Task 4: Records page: browse a day, see photos ✅
-**Description:** Pick a day (calendar), "only trucks that need checking" switch, counts, and
-the day's trucks. Clicking a truck opens a side panel with the snapshot, plate close-up and
-details (plate in Latin and Arabic, container, check digit). Photos come from
-`GET /api/records/{id}/snapshot` and `/plate_image`, looked up by id.
+### Task 4: Settings: lanes and camera roles
+**Description:** `cameras.json` cameras get `lane` and `role`; `lanes` holds direction and
+location. `src/config.py` gets `lanes(cfg)` returning each lane with its cameras; a camera
+without a lane is its own lane with role `both`.
 
 **Acceptance criteria:**
-- [x] Rows keep their order (oldest first) so a fixed row doesn't jump
-- [x] Missing photo shows a friendly message, not a broken image
-- [x] Photo endpoints only return files referenced by that record (no path in the URL)
+- [ ] Today's `cameras.json` gives exactly today's behaviour (one lane per camera)
+- [ ] Invalid combinations are reported in plain words (e.g. a lane with no camera that reads plates)
 
-**Verification:** Photo endpoint test (unknown id, missing file, wrong field); checked in the browser in English and Arabic: day picker, previous day, back to today, filter, side panel with plate close-up and snapshot, missing-photo message.
-**Dependencies:** Task 3 (reuses TruckTable)
-**Files:** `server.py`, `web/src/pages/Records.tsx`, `web/src/components/TruckDetail.tsx`, `web/src/components/DayStats.tsx` (counts shared with Live), `src/i18n.py`, `tests/test_server.py`
-**Scope:** M
+**Verification:** tests for old settings, a 3-camera lane, invalid cases.
+**Dependencies:** None. **Files:** `src/config.py`, `tests/test_config.py`. **Scope:** S
 
-### Task 5: Records page: fix a reading, downloads ✅
-**Description:** In the side panel: edit plate, container and direction, Save. Uses the
-Task 1 check function; errors show next to the field in plain words. Saving rewrites the
-day/month Excel and appends to `logs/corrections.jsonl` (same as today). Download buttons:
-day Excel, day ZIP with photos, month Excel.
-API: `PATCH /api/records/{id}`, `GET /api/excel/month/{month}`, `GET /api/zip/day/{day}`.
+### Task 5: Lane tracker: one truck from several cameras (test-driven)
+**Description:** `LaneTracker` in `src/gate.py` takes reads from all cameras of a lane
+(camera, role, time, codes, plates, frame) and emits one event per truck: container by
+consensus over all container cameras, `cams_agree`, plate from plate cameras (or an ANPR
+event, already confirmed), best photo per camera. Reuses `_Groups`, `consensus_code`,
+`_same_plate`. Thread-safe (cameras run in separate threads).
 
 **Acceptance criteria:**
-- [x] Bad plate / bad container is refused with a clear message; nothing is saved
-- [x] Wrong check digit saves but warns
-- [x] After saving, the row shows ✏️ and the Excel file in `logs/excel` has the new value
+- [ ] Both cameras read the same code: one event, `cams_agree = 2`
+- [ ] One camera misses a digit, the other reads it: correct code, verified when the
+      check digit and the other camera agree
+- [ ] Plate first, container 20 s later: one event; container only / plate only: one event,
+      not verified; a different plate while the visit has one: two trucks
+- [ ] Existing `GateTracker` tests still pass (single-camera lanes use the same rules)
 
-**Verification:** API tests (good fix, wrong check digit, bad input, unknown record, month Excel, ZIP contents); in the browser on a test copy: bad plate refused, valid fix saved and shown as Fixed, Excel file on disk updated, check-digit warning in Arabic, all three downloads return files.
-**Dependencies:** Task 1, Task 4
-**Files:** `server.py`, `web/src/components/TruckDetail.tsx`, `web/src/pages/Records.tsx`, `tests/test_server.py`
-**Scope:** M
+**Verification:** tests written first, from these cases and from real misreads in `logs/corrections.jsonl` examples.
+**Dependencies:** Task 3 (event fields). **Files:** `src/gate.py`, `tests/test_lane.py`. **Scope:** M
 
-### Checkpoint: Daily use
-- [x] Tests and build pass
-- [x] Live → Records → fix → download works end to end (on a test copy of the app with a test video)
-- [ ] Review with the user (look and wording) before Phase 3
+### Checkpoint: Lane logic
+- [ ] Tests pass; code-reviewer agent review of Tasks 3-5; you review the rules
 
 ---
 
-## Phase 3: Setup and testing
+## Phase 2: Detection service
 
-### Task 6: Cameras page: NVR login, camera list ✅
-**Description:** NVR address, user, password, port and Excel language form; Save checks the
-NVR is reachable first. List of cameras as cards: name, channel, In/Out, location, on/off
-switch, delete (with "Are you sure?"). Password is never sent back to the browser (shown as ••••).
-API: `GET/PUT /api/settings`, `PATCH/DELETE /api/cameras/{name}`.
-
-**Acceptance criteria:**
-- [x] Unreachable NVR → "Can't reach 192.168.1.64. Check the cable." and nothing saved
-- [x] `GET /api/settings` never contains the password; leaving it blank keeps the old one
-- [x] Switching a camera off stops it in `cctv.py` within a few seconds
-
-**Verification:** API tests (password never returned, blank keeps it, unreachable refused, bad port, camera secrets in rtsp:// sources hidden, toggle/delete, unknown camera); in the browser on a test copy: unreachable and reachable recorder, switching a camera off stopped it in the running service within seconds, delete with confirmation, Arabic layout.
-**Dependencies:** Task 2
-**Files:** `server.py`, `web/src/pages/Cameras.tsx`, `tests/test_server.py`
-**Scope:** M
-
-### Task 7: Add camera: draw the reading area, test the camera ✅
-**Description:** "Add camera" form (name, channel, In/Out, location). Instead of four
-sliders, the user clicks "Get picture", sees the camera's current frame and **drags a box**
-over where trucks pass. "Test" button runs OCR on one frame and shows what it read.
-API: `POST /api/cameras`, `POST /api/cameras/frame` (grab one frame), `POST /api/ocr` (image → result + annotated image).
+### Task 6: Service runs cameras by lane
+**Description:** `cctv.py`: camera threads feed their lane's `LaneTracker` instead of their
+own tracker; the lane logs one row with every camera's photo. Live status per camera
+unchanged. Reloading settings restarts only the lanes that changed.
 
 **Acceptance criteria:**
-- [x] Drawn box is saved as the same `roi` fractions `cctv.py` reads today
-- [x] Without drawing a box, the whole picture is used
-- [x] Test result shows the annotated picture plus container/plate found, or "Nothing found"
+- [ ] Two synthetic videos of the same truck from two angles (one with a hidden digit) give
+      one row, verified by 2 cameras
+- [ ] A single-camera site gives exactly the rows it gives today (`tests/test_live.py`)
 
-**Verification:** API tests (add/replace in place, bad name/channel/area, no_nvr/unreachable/no_video, frame scaled for sending, test reads only the area, real OCR on a sample); in the browser on a test copy with a fake recorder picture: get picture, drag area, test reading found the container and plate, saved with the area. Not yet tried against a real Hikvision NVR.
-**Dependencies:** Task 6
-**Files:** `server.py`, `web/src/pages/Cameras.tsx`, `web/src/components/AddCamera.tsx`, `web/src/components/AreaPicker.tsx`, `web/src/components/OcrResult.tsx`, `src/i18n.py`, `tests/test_server.py`
-**Scope:** M
+**Verification:** new live test with two videos; existing tests; replay real recordings.
+**Dependencies:** Tasks 4, 5. **Files:** `cctv.py`, `src/gate.py`, `tests/test_live.py`. **Scope:** M
 
-### Task 8: Test page: photos and stream URL ✅
-**Description:** Drop photos (or pick a sample from `images/`) → annotated picture, container
-codes, plates, time taken. "Advanced" fold holds the OCR settings (max side, zoom, vertical,
-plates). Stream URL → grab one frame → same result view. Reuses `OcrResult` from Task 7.
-API: `POST /api/ocr` (upload, with options), `GET /api/samples`, `POST /api/stream/frame`.
+### Task 7: Hikvision ANPR events as the plate source (if Task 2 succeeds)
+**Description:** `src/anpr.py`: listens to the camera's ISAPI event stream (digest login,
+standard library only), turns each plate event into a confirmed plate (Latin + Arabic, our
+format) with its plate photo, and feeds the lane. Reconnects like video streams do.
 
 **Acceptance criteria:**
-- [x] Several photos at once, each with its own result
-- [x] Not-an-image upload → friendly error
-- [x] Results match the Streamlit Test tab for the same sample image
+- [ ] The saved real events from Task 2 parse to the right plates
+- [ ] A dropped connection reconnects; camera offline shows on Live like other cameras
 
-**Verification:** API tests (upload, bad image, too big, bad options, samples by name only, stream accepts only rtsp/http(s)); all 22 sample photos give the same codes and plates as the Streamlit Test tab; in the browser: sample read, two dropped photos (one broken) each with its own result, local file path refused as a stream.
-**Dependencies:** Task 7
-**Files:** `server.py`, `web/src/pages/Test.tsx`, `src/i18n.py`, `requirements.txt` (python-multipart), `tests/test_server.py`
-**Scope:** S
+**Verification:** tests on the fixtures; manual run against the real camera.
+**Dependencies:** Tasks 2, 6. **Files:** `src/anpr.py`, `cctv.py`, `tests/test_anpr.py`. **Scope:** M
 
-### Task 9: Test page: video file as a background job ✅
-**Description:** Upload a video, choose looks/second, In/Out, location → "Process". The server
-runs it in a background thread (same GateTracker/GateLog code as app.py today, in a temp
-folder) and the page shows a progress bar and the latest frame, then the trucks found with
-their snapshots and an Excel download.
-API: `POST /api/video` → job id, `GET /api/video/{job}` (progress, frame, rows), `GET /api/video/{job}/excel`.
-
-**Acceptance criteria:**
-- [x] Page stays usable while the video is processed; progress moves
-- [x] Same trucks found as the Streamlit Test tab for the same video
-- [x] Test runs don't touch the real `logs/gate.db`
-
-**Verification:** API tests (real OCR on a 6 s synthetic video finds the one truck in a temp folder; a new video discards the old one and its files; broken video; bad settings); in the browser: a 40 s two-truck video found both trucks in 81 s with live progress, snapshots and Excel, other requests answered in ~10 ms meanwhile, real records untouched. Leftover video folders are cleared when the server starts.
-**Dependencies:** Task 8
-**Files:** `server.py`, `web/src/pages/Test.tsx`, `web/src/components/VideoTest.tsx`, `src/i18n.py`, `tests/test_server.py`
-**Scope:** M
-
-### Checkpoint: Feature parity
-- [x] Tests and build pass
-- [x] Walk through every Streamlit tab and do the same in React (Live: cameras, start detection, today's trucks and Excel; Records: day, review filter, photos, fix, day/month Excel, ZIP; Cameras: NVR login, Excel language, add/replace, on/off, delete, reading area, camera test; Test: photo, video, stream, OCR settings)
-- [ ] Review with the user
+### Checkpoint: End to end with real recordings
+- [ ] Real recordings replayed: rows match what a person sees in the videos; speed acceptable
 
 ---
 
-## Phase 4: For non-technical users, and roll-out
+## Phase 3: App
 
-### Task 10: First-run setup wizard and plain-language help ✅
-**Description:** When there's no NVR or camera yet, open a 3-step wizard instead of empty
-pages: 1) connect to the recorder (IP, user, password, with a live "Connected ✓"), 2) add
-the gate camera (pick channel from snapshots, In/Out, draw area), 3) done → Live page.
-Every empty state says what to do next in one sentence. Help icons explain terms
-("check digit", "reading area") in plain words. Big touch-friendly buttons; works on a phone.
+### Task 8: Cameras page: lanes and what each camera reads
+**Description:** Camera form gets *Lane* and *What does this camera read?* (container / plate /
+both, with a plain explanation and an (i)); lanes list with direction and location; Live
+groups camera cards by lane. API: settings and camera endpoints carry `lane`, `role`, `lanes`.
 
 **Acceptance criteria:**
-- [x] A person who has never seen the app sets up a camera without reading the README
-- [x] Usable at phone width (375 px) without sideways scrolling
-- [x] All new text exists in English and Arabic
+- [ ] A 3-camera lane can be set up without editing files
+- [ ] Old single-camera setups show and work as before
+- [ ] English and Arabic, phone width
 
-**Verification:** On a test copy with no settings file and a fake recorder: the app opened the wizard by itself; recorder saved, channel pictures shown (no-picture channels marked), tapping one opened the camera form with that picture, area drawn, saved, "All set"; "Add another camera" works. All five pages at 375 px in English and Arabic: no sideways scrolling. New test: every text key used by the React app exists in both languages. (The "never seen the app" criterion still needs a real person.)
-**Dependencies:** Task 7
-**Files:** `web/src/pages/Setup.tsx`, `web/src/components/HelpTip.tsx`, `web/src/components/AddCamera.tsx`, `web/src/pages/Cameras.tsx`, `web/src/components/TruckTable.tsx`, `web/src/api.ts`, `web/src/App.tsx`, `web/src/pages/Live.tsx`, `src/i18n.py`, `tests/test_server.py`
-**Scope:** M
+**Verification:** API tests; browser check on a test copy with the fake recorder.
+**Dependencies:** Task 4. **Files:** `server.py`, `web/src/pages/Cameras.tsx`, `web/src/components/AddCamera.tsx`, `web/src/pages/Live.tsx`, `src/i18n.py`. **Scope:** M
 
-### Task 11: Site login (one password per site) ✅
-**Description:** A site password chosen in the setup wizard (first step) or on the Cameras
-page, stored as a salted PBKDF2 hash in `cameras.json`. All `/api/*` except health, text, auth
-and login need a signed session cookie (30 days, HttpOnly, SameSite=Strict); changing the
-password logs every other device out. The server listens on the network, but until a password
-is set the API answers only the gate computer itself (instead of binding to localhost, so no
-restart is needed after setting it). Sign out in the header.
+### Task 9: Records and Excel: verified badge, every camera's photo
+**Description:** Table and panel show *Verified by 2 cameras* (or *1 camera only* as a Check
+reason); the panel shows both container angles and the plate photo. Photos endpoint serves
+`snapshot2` by record id like the others.
 
 **Acceptance criteria:**
-- [x] Without login, API returns 401 and the app shows the login screen
-- [x] Wrong password → message, with a short delay after repeated tries
-- [x] Password is never stored in plain text
+- [ ] Each Check row says why (plate not confirmed / container not confirmed / only 1 camera)
+- [ ] ZIP and Excel links include every photo
 
-**Verification:** API tests (other devices refused until a password exists and can't set it; set/login/logout/change; others logged out on change; forged cookie; lockout after 10 wrong tries per device; hash roundtrip); in the browser on a test copy: banner on Live, another device (LAN address) sees the "gate computer only" screen, password set (mismatch caught), sign out/in with wrong and right password, cookie not readable by scripts, the other device then signs in and uses the app. The wizard's password step was not clicked through in the browser (same form as the Cameras page).
-**Dependencies:** Task 10
-**Files:** `server.py`, `web/src/pages/Login.tsx`, `web/src/components/PasswordForm.tsx`, `web/src/App.tsx`, `web/src/api.ts`, `web/src/pages/Setup.tsx`, `web/src/pages/Cameras.tsx`, `web/src/pages/Live.tsx`, `src/i18n.py`, `tests/test_server.py`
-**Scope:** M
+**Verification:** API tests for the new photo; browser check in both languages.
+**Dependencies:** Tasks 3, 6. **Files:** `server.py`, `web/src/components/TruckDetail.tsx`, `web/src/components/TruckTable.tsx`, `src/i18n.py`. **Scope:** M
 
-### Task 12: Switch launchers, update README, remove Streamlit ✅
-**Description:** `start_gate.bat` starts the detection service and `server.py --open` (which
-opens the browser), and restarts the app if it ever stops. The server prints the address other
-devices use (`http://<laptop-ip>:8000`). README: new install steps (setup wizard, site password,
-other devices), pages, how to change and rebuild the web app; online demo removed. Deleted
-`app.py`, `packages.txt` (Streamlit Cloud), `streamlit` and `pandas` from `requirements.txt`,
-48 text entries only the Streamlit app used, and the Streamlit `.claude/launch.json` entry.
+### Task 10: Setup wizard: second container camera and plate camera
+**Description:** After the first camera, the wizard offers *Add the second container camera
+for this gate* and *Add the plate camera*, each with the channel pictures; both can be skipped.
 
 **Acceptance criteria:**
-- [x] Double-click `start_gate.bat` → browser opens the React app, detection runs
-- [x] No Streamlit code or dependency left 
-- [x] README install steps work on a clean Windows PC with only Python 3.12
+- [ ] A full lane (3 cameras) can be set up from the wizard alone
+- [ ] Skipping gives a working single-camera lane
 
-**Verification:** 88 tests pass. Fresh copy of the repo in an empty folder with a new Python 3.12 venv and only `requirements.txt` (which pulled newer FastAPI 0.143 / OpenCV 5.0): the app starts, serves the built web app and prints both addresses; all 88 tests pass there too. `start_gate.bat` itself was not double-clicked here (it would start the real detection service and open your browser).
-**Dependencies:** Checkpoint: Feature parity
-**Files:** `start_gate.bat`, `server.py`, `README.md`, `requirements.txt`, `app.py` and `packages.txt` (deleted), `src/i18n.py`, `cctv.py`, `videos/readme.txt`, `.claude/launch.json`
-**Scope:** S
+**Verification:** browser walk-through on a fresh test copy.
+**Dependencies:** Task 8. **Files:** `web/src/pages/Setup.tsx`, `src/i18n.py`. **Scope:** S
+
+### Checkpoint: Lanes complete
+- [ ] Tests and build pass; code review; you try it on the site laptop with the real cameras
+
+---
+
+## Phase 4: License in the app
+
+### Task 11: License check (test-driven)
+**Description:** `src/license.py`: verify a key (Ed25519, public key in the app, key id for
+rotation), machine code from the Windows machine ID, states (trial (14 days from first start) /
+active / expiring (30 days before) / grace (14 days after) / expired / no license after trial)
+and the clock guard (latest time seen, kept in the database).
+
+**Acceptance criteria:**
+- [ ] A changed character, another machine's key, or an expired key are refused with a plain reason
+- [ ] States change on the right days (30 days before, end date, end of grace)
+- [ ] Clock set back by a week: still counts from the latest time seen
+
+**Verification:** tests first, with keys made by a test-only key pair.
+**Dependencies:** None (can start in parallel with Phase 1). **Files:** `src/license.py`, `tests/test_license.py`, `requirements.txt`. **Scope:** M
+
+### Task 12: Your license tool
+**Description:** `tools/license_tool.py`: `keygen` (once; private key saved outside the repo),
+`issue --customer --site --machine CODE --days 365 [--cameras N]` prints the key and adds it to
+a local ledger, `inspect KEY` shows what is inside.
+
+**Acceptance criteria:**
+- [ ] Keys it issues are accepted by Task 11; a test fails if a private key file is ever inside the repo
+- [ ] Clear instructions printed for backing up the private key
+
+**Verification:** tests (issue, inspect, round trip); dry run.
+**Dependencies:** Task 11. **Files:** `tools/license_tool.py`, `tests/test_license_tool.py`, `.gitignore`. **Scope:** S
+
+### Task 13: Activation screen, License card, expiry banners
+**Description:** API: `GET /api/license` (state, end date, days left, machine code),
+`POST /api/license` (paste a key). App: activation screen when there's no license (after the
+trial, if any), a License card on the Cameras page, banners from 30 days before with your
+contact details.
+
+**Acceptance criteria:**
+- [ ] Machine code shown with a copy button; a pasted key activates at once
+- [ ] Banners in English and Arabic; wrong keys get plain messages
+
+**Verification:** API tests; browser check of each state (keys made by the test key pair).
+**Dependencies:** Tasks 11, 12. **Files:** `server.py`, `web/src/pages/License.tsx`, `web/src/App.tsx`, `src/i18n.py`, `tests/test_server.py`. **Scope:** M
+
+### Task 14: After the grace period
+**Description:** When the license has run out (after grace), the detection service stops
+reading cameras and the app refuses new cameras and video tests. Records, photos,
+corrections and downloads keep working. A new key restarts detection within a minute.
+
+**Acceptance criteria:**
+- [ ] Expired: no new rows; existing rows, Excel and ZIP still available
+- [ ] Renewed key: detection resumes without restarting the computer
+
+**Verification:** tests with a short-lived test key; manual run.
+**Dependencies:** Task 13. **Files:** `cctv.py`, `server.py`, `tests/test_license_enforce.py`. **Scope:** S
+
+### Checkpoint: Licensing works offline
+- [ ] Tests pass; security-auditor agent review of Tasks 11-14; you issue a real key with your tool
+
+---
+
+## Phase 5: Remote license control
+
+### Task 15: License server
+**Description:** `license_server/` (separate small FastAPI app, own SQLite): `POST /v1/checkin`
+(license id, machine code, app version) answers active / ended plus a newer key if you renewed;
+admin commands (renew, end, list) protected by an admin token. Holds the private key as a
+secret setting, never in the repo.
+
+**Acceptance criteria:**
+- [ ] Renew: next check-in returns the new key; End: next check-in returns ended
+- [ ] Wrong admin token refused; check-ins rate-limited
+
+**Verification:** tests with FastAPI's test client.
+**Dependencies:** Task 12. **Files:** `license_server/app.py`, `license_server/tests/test_app.py`, `license_server/README.md`. **Scope:** M
+
+### Task 16: App checks in daily
+**Description:** The detection service checks in once a day when online (5 s timeout, never
+blocks or slows the gate), saves a newer key, and applies an "ended" answer. The License card
+shows the last check-in.
+
+**Acceptance criteria:**
+- [ ] No internet / server down: nothing changes, no errors on screen
+- [ ] Renewed on the server: the site shows the new end date within a day (or at once with *Check now*)
+
+**Verification:** tests against a local license server; manual.
+**Dependencies:** Tasks 14, 15. **Files:** `src/license.py`, `cctv.py`, `web/src/pages/License.tsx`. **Scope:** S
+
+### Task 17: Put the license server online
+**Description:** Deploy `license_server/` to the host you choose (HTTPS), set the private key
+and admin token as secrets, and renew a test site from your laptop.
+
+**Acceptance criteria:**
+- [ ] HTTPS only; secrets not in the repo or logs
+- [ ] A test site picks up a remote renewal
+
+**Verification:** end-to-end renewal; `license_server/README.md` steps followed exactly.
+**Dependencies:** Task 16, your hosting account. **Files:** `license_server/README.md`. **Scope:** S
+
+### Checkpoint: Remote renewal works
+- [ ] Renew and end a test license remotely; app unaffected while the server is down
+
+---
+
+## Phase 6: Release
+
+### Task 18: Security review of licensing
+**Description:** security-auditor agent reviews `src/license.py`, `tools/`, `license_server/`
+and the app's license endpoints; fix every confirmed finding.
+
+**Acceptance criteria:**
+- [ ] No high or medium findings left open
+**Verification:** review report; tests for each fix.
+**Dependencies:** Task 17. **Scope:** S
+
+### Task 19: README for sites, renewal guide for you
+**Description:** README: lanes and camera roles, ANPR setup, what customers see before and
+after the license end date. A private guide for you: making keys, renewing, moving a site to
+a new computer, backing up the private key.
+
+**Acceptance criteria:**
+- [ ] A new site can be set up with lanes and activated from the README alone
+**Verification:** walk through on a fresh copy.
+**Dependencies:** all. **Files:** `README.md`, `license_server/README.md`. **Scope:** S
 
 ### Checkpoint: Complete
-- [x] All acceptance criteria met, tests and build pass (88 tests, here and in a fresh environment)
-- [ ] Ready for review: still open are a real Hikvision NVR, a real first-time user going through the wizard, and double-clicking `start_gate.bat` on the site laptop
+- [ ] All acceptance criteria met, tests and build pass
+- [ ] Reviewed by you
