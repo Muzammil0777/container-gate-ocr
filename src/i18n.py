@@ -252,6 +252,15 @@ TEXT = {
                   'المنطقة الأصغر تُقرأ أسرع وأدق.'),
     'help_nvr': ('The recorder (NVR) is the box all the cameras are plugged into. This app gets the camera pictures from it.',
                  'جهاز التسجيل (NVR) هو الجهاز الذي تتصل به جميع الكاميرات. يحصل هذا التطبيق على صور الكاميرات منه.'),
+    # Web app: gate lanes
+    'lane_no_plate_camera': ('Lane "{lane}" has no camera that reads plates, so its trucks will have no plate.',
+                             'المسار "{lane}" ليس فيه كاميرا تقرأ اللوحات، لذلك لن تُسجَّل لوحات شاحناته.'),
+    'lane_no_container_camera': ('Lane "{lane}" has no camera that reads containers, so its trucks will have no container number.',
+                                 'المسار "{lane}" ليس فيه كاميرا تقرأ الحاويات، لذلك لن تُسجَّل أرقام حاويات شاحناته.'),
+    'unknown_lane': ('Camera "{camera}" is set to lane "{lane}", which does not exist. It works on its own for now.',
+                     'الكاميرا "{camera}" مضبوطة على المسار "{lane}" غير الموجود. تعمل وحدها الآن.'),
+    'bad_role': ('Camera "{camera}" has an unknown setting for what it reads, so it is not used.',
+                 'إعداد ما تقرأه الكاميرا "{camera}" غير معروف، لذلك لا يتم استخدامها.'),
     # Web app: site login
     'sign_in': ('Sign in', 'تسجيل الدخول'),
     'sign_in_help': ('Enter the site password to open the gate app.', 'أدخل كلمة مرور الموقع لفتح تطبيق البوابة.'),

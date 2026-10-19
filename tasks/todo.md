@@ -58,17 +58,17 @@ read by fewer cameras than expected. Excel and ZIP get a *Verified* column and t
 **Verification:** tests: upgrade a saved old-format database; Excel column; needs_review cases.
 **Dependencies:** None. **Files:** `src/store.py`, `src/i18n.py`, `src/gate.py`, `server.py` (2nd photo path hidden), `tests/test_store.py`, `tests/test_server.py`. **Scope:** M
 
-### Task 4: Settings: lanes and camera roles
+### Task 4: Settings: lanes and camera roles ✅
 **Description:** `cameras.json` cameras get `lane` and `role`; `lanes` holds direction and
-location. `src/config.py` gets `lanes(cfg)` returning each lane with its cameras; a camera
+location. `src/lanes.py` (not `src/config.py`: that imports `cctv.py`, which will need lanes) has `lanes(cfg)` returning each lane with its cameras; a camera
 without a lane is its own lane with role `both`.
 
 **Acceptance criteria:**
-- [ ] Today's `cameras.json` gives exactly today's behaviour (one lane per camera)
-- [ ] Invalid combinations are reported in plain words (e.g. a lane with no camera that reads plates)
+- [x] Today's `cameras.json` gives exactly today's behaviour (one lane per camera)
+- [x] Invalid combinations are reported in plain words (e.g. a lane with no camera that reads plates)
 
 **Verification:** tests for old settings, a 3-camera lane, invalid cases.
-**Dependencies:** None. **Files:** `src/config.py`, `tests/test_config.py`. **Scope:** S
+**Dependencies:** None. **Files:** `src/lanes.py`, `src/i18n.py` (problem texts), `tests/test_lanes.py`. **Scope:** S
 
 ### Task 5: Lane tracker: one truck from several cameras (test-driven)
 **Description:** `LaneTracker` in `src/gate.py` takes reads from all cameras of a lane
