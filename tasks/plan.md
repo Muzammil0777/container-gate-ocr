@@ -129,6 +129,38 @@ Previous plan (React app, done): [archive/plan-react-app.md](archive/plan-react-
 ### Checkpoint: Complete
 - [ ] All tests pass, build clean, reviewed by you
 
+## Task 1 results: speed on this laptop (2026-10-19)
+Ryzen 7 5800U (8 cores / 16 threads), CPU only. Synthetic 4K recording (30 s, two trucks),
+`py -3.12 bench.py yard_4k.mp4 --copies N --fps 4`: every stream decodes all its frames in real
+time and they share one OCR engine, like the live service.
+
+| Cameras at once | Looks/s per camera | All together | Trucks found (of 2) |
+|---|---|---|---|
+| 1 | 0.79 | 0.79 | 2 |
+| 2 | 0.37-0.40 | 0.77 | 1-2 |
+| 3 | 0.23-0.27 | 0.77 | 1-2 |
+| 4 | 0.17-0.20 | 0.73 | 0 |
+
+- **The laptop reads ~0.77 pictures per second in total, whatever the number of cameras.**
+  One 4K look takes ~1.3 s and looks run one at a time. A reading area (60 % of the picture)
+  did not change this.
+- This is the worst case: here every camera always has a truck. Live, a camera with no
+  movement is skipped, so an idle lane costs almost nothing. With **one truck at a time**, its
+  lane's 2 container cameras get ~0.4 looks/s each: the same total reads per truck as today,
+  but from two angles. With trucks at both gates at once, ~0.2 each, which found nothing above.
+
+**Recommendations**
+1. **ANPR camera reads plates itself (Task 7, option b).** Plate OCR on our side would be a
+   third stream per lane; on this laptop that is not affordable.
+2. **2 container cameras per lane, 2 lanes, on this laptop: only if trucks rarely arrive at
+   both gates at the same moment.** Otherwise a stronger PC (desktop 8-16 core CPU), or an
+   NVIDIA GPU (`use_cuda`, already supported: typically several times faster).
+3. **Worth trying before buying hardware:** run 2 OCR engines side by side with fewer CPU
+   threads each (one 4K look may not use all 16 threads well). Small change, measured with
+   this same command; done as part of Task 6 if it helps.
+4. Re-run on **real recordings** from both angles (Open Question 2) before deciding: real
+   yards have less text per frame than this test video.
+
 ## Risks and Mitigations
 | Risk | Impact | Mitigation |
 |------|--------|------------|

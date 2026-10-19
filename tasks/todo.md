@@ -12,14 +12,14 @@ Checks used below:
 
 ## Phase 0: Evidence first
 
-### Task 1: Multi-camera speed test on this laptop
+### Task 1: Multi-camera speed test on this laptop ✅
 **Description:** Extend `bench.py` to replay several recordings at the same time through the
 real pipeline (shared OCR lock, reading areas, follow mode), like 2-3 live cameras per lane.
 Report looks per second per camera and trucks found, for 1, 2, 3 and 4 streams.
 
 **Acceptance criteria:**
-- [ ] `bench.py a.mp4 b.mp4 --realtime` runs both together and prints looks/s per stream
-- [ ] Numbers recorded in plan.md for this laptop, with a recommendation (looks/s,
+- [x] `bench.py a.mp4 b.mp4` (or `--copies N`) runs them together and prints looks/s per stream
+- [x] Numbers recorded in plan.md for this laptop, with a recommendation (looks/s,
       reading areas, which cameras can share the CPU, hardware)
 
 **Verification:** run on the recordings from Open Question 2 in plan.md (or existing ones until then).
