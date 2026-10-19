@@ -16,18 +16,18 @@ def lanes(cfg):
     unknown role are left out; a camera naming an unknown lane runs as a lane of its own.
     Lanes without any camera are left out."""
     defined = {ln['name']: ln for ln in cfg.get('lanes', []) if ln.get('name')}
-    out = {name: {'name': name, 'direction': ln.get('direction', ''), 'location': ln.get('location', ''), 'cameras': []}
-           for name, ln in defined.items()}
+    out = {('lane', name): {'name': name, 'direction': ln.get('direction', ''), 'location': ln.get('location', ''),
+                            'cameras': []} for name, ln in defined.items()}
     for cam in cfg.get('cameras', []):
         if not cam.get('name') or not cam.get('enabled', True):
             continue
         role = cam.get('role', 'both')
         if role not in ROLES:
             continue
-        lane = cam.get('lane')
-        if lane not in defined:  # today's settings (or a lane that was deleted): the camera alone
-            lane = cam['name']
-            out.setdefault(lane, {'name': lane, 'direction': cam.get('direction', ''),
+        lane = ('lane', cam.get('lane'))
+        if cam.get('lane') not in defined:  # today's settings (or a lane that was deleted): the camera alone
+            lane = ('camera', cam['name'])
+            out.setdefault(lane, {'name': cam['name'], 'direction': cam.get('direction', ''),
                                   'location': cam.get('location', ''), 'cameras': []})
         out[lane]['cameras'].append({**cam, 'role': role})
     result = [ln for ln in out.values() if ln['cameras']]

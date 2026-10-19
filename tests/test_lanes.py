@@ -53,3 +53,12 @@ def test_problems_are_reported_as_text_keys():
         ('bad_role', {'camera': 'D'}),
     ]
     assert [ln['name'] for ln in lanes(cfg)] == ['Entry', 'Exit', 'C']  # C still runs, as its own lane
+
+
+def test_a_camera_named_like_a_lane_does_not_join_it():
+    cfg = {'lanes': [{'name': 'Entry', 'direction': 'IN'}],
+           'cameras': [{'name': 'A', 'lane': 'Entry', 'role': 'container'},
+                       {'name': 'Entry', 'direction': 'OUT'}]}  # an old camera that happens to be called Entry
+    got = lanes(cfg)
+    assert [(ln['name'], ln['direction'], [c['name'] for c in ln['cameras']]) for ln in got] == [
+        ('Entry', 'IN', ['A']), ('Entry', 'OUT', ['Entry'])]

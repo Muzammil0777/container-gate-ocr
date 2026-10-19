@@ -1,6 +1,7 @@
 """The gate records database: upgrading older databases, lane columns, Excel layout."""
 import io
 import sqlite3
+from contextlib import closing
 
 from openpyxl import load_workbook
 
@@ -23,7 +24,7 @@ ROW = {'date': '2026-10-19', 'time': '09:00:00', 'direction': 'IN', 'plate': '32
 
 def test_older_database_is_upgraded_and_keeps_its_rows(tmp_path):
     path = tmp_path / 'gate.db'
-    with sqlite3.connect(path) as db:
+    with closing(sqlite3.connect(path)) as db, db:
         db.executescript(OLD_SCHEMA)
         db.execute("INSERT INTO trucks (date, time, direction, plate, snapshot) VALUES "
                    "('2026-10-18', '08:00:00', 'OUT', '5188 VDA', 'C:/snaps/a.jpg')")

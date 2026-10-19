@@ -33,10 +33,12 @@ class _CamGroup(_Group):
         self.by_cam = {}  # camera -> (score, frame)
 
     def add(self, item, frame, now, window_s):
+        before = self.best
         super().add(item, frame, now, window_s)
         cam = item['cam']
         if cam not in self.by_cam or item['score'] > self.by_cam[cam][0]:
-            self.by_cam[cam] = (item['score'], frame.copy())
+            shared = self.best is not before  # this read is the group's new best: reuse its copy
+            self.by_cam[cam] = (item['score'], self.best[2] if shared else frame.copy())
 
 
 class _Groups:
@@ -137,7 +139,7 @@ class LaneTracker:
             if codes or plates:
                 if v is None:
                     v = self.visit = self._new_visit(now)
-                v['last'] = now
+                v['last'] = max(v['last'], now)
                 for c in codes:
                     v['codes'].add(c, frame, now, self.window_s)
                 for p in plates:
@@ -148,11 +150,13 @@ class LaneTracker:
                 code, plate = self._confirmed(v)
                 if code or plate:
                     v['first_ok'] = v['first_ok'] or now
+                    if code and v['code_ok'] is None:
+                        v['code_ok'] = now
                     complete = (code or not self.reads_codes) and (plate or not self.reads_plates)
-                    agreed = self.cams_expected <= 1 or (code and self._agree(code) >= self.cams_expected)
+                    agreed = (self.cams_expected <= 1 or not code or self._agree(code) >= self.cams_expected
+                              or now - v['code_ok'] >= self.max_wait_s)  # waited for the other camera
                     waited = now - v['first_ok'] >= self.max_wait_s
-                    if (complete and (agreed or waited)) or \
-                            (waited and now - v['start'] >= self.pair_window_s):
+                    if (complete and agreed) or (waited and now - v['start'] >= self.pair_window_s):
                         events += self._emit(now)
             return events
 
@@ -162,9 +166,10 @@ class LaneTracker:
             return self._emit(time.time() if now is None else now)
 
     def _new_visit(self, now):
-        return {'codes': _Groups(lambda c: c['code'], same_container, _CamGroup),
-                'plates': _Groups(lambda p: p['digits'] + p['letters'], _same_plate, _CamGroup),
-                'start': now, 'last': now, 'first_ok': None}
+        per_cam = _CamGroup if self.cams_expected > 1 else _Group  # a photo per container camera
+        return {'codes': _Groups(lambda c: c['code'], same_container, per_cam),
+                'plates': _Groups(lambda p: p['digits'] + p['letters'], _same_plate),
+                'start': now, 'last': now, 'first_ok': None, 'code_ok': None}
 
     def _over(self, v, now):
         """Nothing new for gap_s, and not waiting (within pair_window_s) for a missing part."""
@@ -175,13 +180,17 @@ class LaneTracker:
         return not missing or now - v['start'] >= self.pair_window_s
 
     def _next_truck(self, now):
-        """Two different confirmed plates in one visit: the first truck is done, the visit of
-        the next one starts with its plate (its container comes after its plate)."""
+        """Lanes of several cameras: a second, different confirmed plate that started at least
+        gap_s after the first one was last seen is the next truck. The first truck is done; the
+        visit of the next one starts with its plate (its container comes after its plate). One
+        camera never splits: there, a plate read two ways is one truck, as it always was."""
         v, n = self.visit, self.min_hits
         ok = [g for g in v['plates'].groups if len(g.reads) >= n]
-        if len(ok) < 2:
+        if self.pair_window_s == 0 or len(ok) < 2:
             return []
         nxt = max(ok, key=lambda g: g.first)
+        if nxt.first - max(r[0] for g in ok if g is not nxt for r in g.reads) < self.gap_s:
+            return []  # both plates seen at about the same time: misreads of one plate
         v['plates'].groups.remove(nxt)
         events = self._emit(now)
         self.visit = self._new_visit(now)
@@ -219,10 +228,10 @@ class LaneTracker:
             self.logged[plate[0]['digits'] + plate[0]['letters']] = now
         frame = frame2 = None
         if code:
-            best_cam = code[1].best[1]['cam']
             frame = code[1].best[2]
-            others = sorted((s, f) for cam, (s, f) in code[1].by_cam.items() if cam != best_cam)
-            frame2 = others[-1][1] if others else None
+            best_cam = code[1].best[1]['cam']
+            others = [sf for cam, sf in getattr(code[1], 'by_cam', {}).items() if cam != best_cam]
+            frame2 = max(others, key=lambda sf: sf[0])[1] if others else None
         return [{'code': code and code[0], 'plate': plate and plate[0],
                  'frame': frame if frame is not None else plate[1].best[2],
                  'frame2': frame2, 'plate_frame': plate and plate[1].best[2],

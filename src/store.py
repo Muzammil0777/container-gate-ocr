@@ -66,7 +66,11 @@ class Store:
         have = {r['name'] for r in self.db.execute('PRAGMA table_info(trucks)')}
         for col, kind in LANE_FIELDS.items():  # an older database: add the new columns, keep every row
             if col not in have:
-                self.db.execute(f'ALTER TABLE trucks ADD COLUMN {col} {kind}')
+                try:
+                    self.db.execute(f'ALTER TABLE trucks ADD COLUMN {col} {kind}')
+                except sqlite3.OperationalError as e:  # the other process (app / service) just added it
+                    if 'duplicate column' not in str(e):
+                        raise
         self.lock = threading.Lock()
 
     def add(self, row, dedupe_s=300):

@@ -162,3 +162,12 @@ def test_misreads_of_one_truck_combine_into_the_right_reading():
     e = events[0]
     assert (e['code']['code'], e['code']['valid']) == ('MRSU7869395', True)     # MRSU 786939 5
     assert e['plate']['plate'] == '3231 UTA'                                   # not the cut-off '231 UTA'
+
+
+def test_a_plate_misread_that_flips_letters_does_not_make_a_second_truck():
+    """One camera reads UTA, then UTR (letters differ, so a second plate group): still one truck."""
+    t = GateTracker(min_hits=2)
+    events = run(t, [(0, [], [plate()]), (0.5, [], [plate()]), (1, [], [plate(letters='UTR')]),
+                     (1.5, [], [plate(letters='UTR')]), (2, [code('MRSU4425761')], []),
+                     (2.5, [code('MRSU4425761')], [])]) + [(9, e) for e in t.flush(9)]
+    assert [(e['code'] and e['code']['code'], e['plate']['plate']) for _, e in events] == [('MRSU4425761', '3231 UTA')]

@@ -108,11 +108,12 @@ def test_cameras_only_count_what_they_are_meant_to_read():
 
 def test_cameras_in_their_own_threads_give_one_event():
     lane = LaneTracker(LANE, min_hits=2, max_wait_s=100, gap_s=100)
-    events, lock = [], threading.Lock()
+    events, lock, start = [], threading.Lock(), threading.Barrier(3)
 
     def camera(name, codes, plates):
-        for i in range(50):
-            got = lane.update(name, codes, FRAMES[name], i * 0.1, plates)
+        start.wait()  # all three cameras at once
+        for i in range(300):
+            got = lane.update(name, codes, FRAMES[name], i * 0.01, plates)
             with lock:
                 events.extend(got)
 
@@ -123,3 +124,27 @@ def test_cameras_in_their_own_threads_give_one_event():
     for th in threads:
         th.join()
     assert len(events) + len(lane.flush(10)) == 1
+
+
+def test_second_camera_gets_its_wait_after_the_container_is_read_not_after_the_plate():
+    """Plate read at the front first, container cameras 20 s later at the rear, the right one a
+    second after the left: the right camera must still get its chance to agree."""
+    lane = LaneTracker(LANE, min_hits=2, max_wait_s=10, gap_s=5, pair_window_s=30)
+    events = run(lane, [(0, 'anpr', [], [plate()]), (1, 'anpr', [], [plate()])] + quiet([5, 10, 15])
+                 + [(20, 'left', [code()], []), (21, 'left', [code()], []),
+                    (22, 'right', [code()], []), (23, 'right', [code()], [])])
+    assert [(now, e['cams_agree']) for now, e in events] == [(22, 2)]
+
+
+def test_three_container_cameras_with_equal_scores_do_not_crash():
+    lane = LaneTracker([('a', 'container'), ('b', 'container'), ('c', 'container')], min_hits=2)
+    frames = {name: FRAME.copy() for name in 'abc'}
+    events = [e for now in (0, 1) for cam in 'abc' for e in lane.update(cam, [code()], frames[cam], now, [])]
+    events += lane.flush(5)
+    assert len(events) == 1 and events[0]['frame2'] is not None
+
+
+def test_late_arriving_reads_do_not_move_the_visit_back_in_time():
+    lane = LaneTracker(LANE, min_hits=2, gap_s=5, pair_window_s=30)
+    run(lane, [(10, 'anpr', [], [plate()]), (9.5, 'left', [code()], [])])  # a camera thread a little behind
+    assert lane.visit['last'] == 10

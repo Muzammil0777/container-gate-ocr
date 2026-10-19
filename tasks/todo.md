@@ -89,7 +89,14 @@ event, already confirmed), best photo per camera. Reuses `_Groups`, `consensus_c
 **Dependencies:** Task 3 (event fields). **Files:** `src/gate.py`, `tests/test_lane.py`. **Scope:** M
 
 ### Checkpoint: Lane logic
-- [ ] Tests pass; code-reviewer agent review of Tasks 3-5; you review the rules
+- [x] Tests pass; code-reviewer agent review of Tasks 3-5 (2026-10-19). Fixed with a failing test
+      first: a single camera reading a plate two ways made a phantom second truck (regression,
+      now one truck again); the second container camera got no wait when the plate came first;
+      photos copied twice; crash with 3 container cameras of equal score; a late camera thread
+      moved the visit's clock back; a camera named like a lane joined it; two processes
+      upgrading an old database at once
+- [ ] You review the rules (one truck per lane visit, verified = both container cameras read
+      the exact number at least once, waits: pair_window_s 30 s, max_wait_s 10 s)
 
 ---
 
@@ -104,6 +111,12 @@ unchanged. Reloading settings restarts only the lanes that changed.
 - [ ] Two synthetic videos of the same truck from two angles (one with a hidden digit) give
       one row, verified by 2 cameras
 - [ ] A single-camera site gives exactly the rows it gives today (`tests/test_live.py`)
+
+- [ ] Snapshots: the container box drawn on the container photo, the plate box on the plate
+      photo (today both are drawn on one frame; with lanes they come from different cameras)
+- [ ] Pairing across trucks (from the review): a truck without a container followed by one
+      whose plate wasn't read, and a next plate confirmed while the rear camera still reads the
+      previous container: tested on real recordings; at least such rows are marked Check
 
 **Verification:** new live test with two videos; existing tests; replay real recordings.
 **Dependencies:** Tasks 4, 5. **Files:** `cctv.py`, `src/gate.py`, `tests/test_live.py`. **Scope:** M
