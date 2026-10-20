@@ -12,6 +12,10 @@ Previous plan (React app, done): [archive/plan-react-app.md](archive/plan-react-
 2. **Licensing.** The app is activated with a signed license key that runs out (e.g. after
    a year). From 30 days before, staff see "contact us to renew". Renewal is a new key, typed
    in or fetched automatically from a small license server you control.
+3. **Editions and users (added 2026-10-20).** Two editions are sold as a yearly subscription:
+   **Site** (one site, opened from the site network) and **Enterprise** (several sites + one
+   central HQ for the manager). Users are sold in packs of 5, so the app needs named logins
+   and seat limits. Prices: `Gate_Reader_Pricing.xlsx` (not committed).
 
 ## What the code does today (why this needs a design, not a tweak)
 - Each camera runs its own `GateTracker` and logs its own rows (`cctv.py: watch`).
@@ -72,6 +76,55 @@ Previous plan (React app, done): [archive/plan-react-app.md](archive/plan-react-
   comes from compiling the app into an installer and from the sales contract (optional
   later phase).
 
+### Named users and seats (Phase 7)
+- Today each site has **one shared password** (`server.py`, `site_password`), so users can't
+  be counted. A `users` table in `logs/gate.db`: username, display name, password hash (same
+  PBKDF2 as now), role, active, created.
+- **Roles:** *Admin* (settings, cameras, users), *Operator* (live, records, fixes), *Viewer*
+  (records and Excel only).
+- **A user = an active named login**, not people online at once: easy to count and explain.
+- The session cookie carries the user id inside the existing HMAC, so disabling a user logs
+  them out at once.
+- **Upgrade:** on first start the old site password becomes user `admin`; nothing breaks.
+- Fixes record who made them (`corrected_by` column and in `logs/corrections.jsonl`).
+- Adding a user over the license limit shows "Your license allows N users. Contact us to add
+  5 more." Disabling a user frees a seat.
+
+### License carries edition, users, lanes (Phase 8)
+- Key gets `edition` (`site` / `enterprise`), `users`, `lanes`. Old keys keep working:
+  missing `users` = 5, missing `lanes` = cameras as today. Trial = 5 users, 2 lanes.
+- **Adding 5 users = a new key**, typed in or picked up by the daily check-in (Tasks 15-16).
+  No reinstall, no visit. The License card shows "Users 7 of 10, Lanes 2 of 2".
+
+### Enterprise: central HQ (Phase 9)
+```
+ Site PC (Riyadh)  ─┐
+ Site PC (Jeddah)  ─┤  HTTPS push, outbound only     ┌───────────────────────────┐
+ Site PC (Jubail)  ─┼──────────────────────────────▶ │ Central HQ (KSA cloud VPS) │ ◀── Manager's browser
+ Site PC (Dammam)  ─┘  (records, small photos,       │ all sites' records, health │     (anywhere)
+                        heartbeat every minute)       └───────────────────────────┘
+```
+- **Each site keeps working on its own.** Detection, records and Excel stay on the site PC.
+  Internet down: nothing stops; the site catches up when it is back.
+- **Sites push, HQ never connects in.** Outbound HTTPS only: no VPN, no open ports, works on
+  4G. Each site has its own token, made at HQ and pasted once into the site's Settings
+  ("Connect to HQ"); HQ stores it hashed.
+- **What is sent:** new and changed rows (an `updated_at` column, so fixes sync too), photos
+  shrunk to ~1280 px (full size stays on site), and a heartbeat each minute (service
+  running, cameras online, license state, disk free).
+- **No duplicates:** HQ keys each row by (site, site's row id), so re-sending is harmless.
+- **HQ = same code in central mode** (`server.py --central`): same `Store` with a `site`
+  column, same React app with a site filter, a **Sites page** (online/offline, last sync,
+  trucks today, cameras down) and Excel per site or across sites.
+- **Who sees what:** Phase 7 users plus a site scope: an HQ manager sees all sites, a site
+  supervisor only theirs. HQ users count toward the company's user packs.
+- **Hosting:** one small VPS **per customer** (data kept apart, simple to price) in a
+  Riyadh/Jeddah data centre (PDPL: data stays in KSA). Caddy for HTTPS, runs as a service,
+  nightly database backup to separate storage, uptime monitor. HQ keeps photos 90 days
+  (setting), rows forever.
+- **Not in v1 (add when a customer asks):** changing site settings from HQ (remote desktop
+  for now), email/WhatsApp alerts, Postgres (SQLite is fine below ~20 sites).
+
 ### How we build it (skills)
 - **Test-driven** for the lane tracker and the license checks (pure logic, many edge
   cases): tests first, from real failure cases.
@@ -126,6 +179,34 @@ Previous plan (React app, done): [archive/plan-react-app.md](archive/plan-react-
 - [ ] Task 18: Security review of licensing, fix findings
 - [ ] Task 19: README for sites, renewal guide for you
 
+### Phase 7: Named users and seats
+- [ ] Task 20: Users table, upgrade from the site password
+- [ ] Task 21: Login by username, roles checked on every API route
+- [ ] Task 22: Users page (admin)
+- [ ] Task 23: Who fixed a reading (`corrected_by`)
+
+### Phase 8: License with edition, users, lanes
+- [ ] Task 24: New license fields, user and lane limits enforced
+- [ ] Task 25: License tool options, usage on the License card
+
+### Checkpoint: User packs can be sold
+
+### Phase 9: Enterprise central HQ
+- [ ] Task 26: `updated_at` and sync cursor in the site database
+- [ ] Task 27: HQ receive API: enrol site, rows, photos, heartbeat
+- [ ] Task 28: Site sync worker: push, retry, resume after offline
+- [ ] Task 29: HQ mode in the app: site filter, Sites page, cross-site Excel
+- [ ] Task 30: Site Settings: Connect to HQ
+- [ ] Task 31: Site-scoped HQ users
+- [ ] Task 32: Deploy HQ to a VPS, with a runbook
+
+### Checkpoint: Two sites sync to a test HQ, survive an hour offline, no duplicates
+
+### Phase 10: Shipping to customers
+- [ ] Task 33: Site installer (setup.exe, autostart, firewall rule for port 8000)
+- [ ] Task 34: Optional: compiled app (Nuitka)
+- [ ] Task 35: Customer docs (en/ar)
+
 ### Checkpoint: Complete
 - [ ] All tests pass, build clean, reviewed by you
 
@@ -172,6 +253,9 @@ time and they share one OCR engine, like the live service.
 | Customer sets the PC clock back to extend the license | Low | Clock guard: the app remembers the latest time it has seen; a clock far behind it counts as the latest time |
 | License checks bypassed by editing Python source | Med | Deterrent only (stated above); optional later: compiled installer |
 | A license problem stops a gate mid-shift | High | Warnings start 30 days ahead, 14 days grace, never stops records or exports, license server outages never affect the app |
+| Upgrading to named users locks a site out | High | The old site password becomes user `admin` automatically; tested on a copy of a real `cameras.json` + `gate.db` |
+| Site internet is slow or metered (4G) | Med | Photos shrunk before sending, batches, resume where it stopped; sync never blocks detection |
+| HQ server down or lost | Med | Sites are unaffected (they keep everything); nightly backups; HQ can be rebuilt and sites re-send |
 
 ## Decisions (2026-10-19)
 - Unverified trucks are written and marked **Check**, never held back or dropped.

@@ -303,6 +303,184 @@ a new computer, backing up the private key.
 **Verification:** walk through on a fresh copy.
 **Dependencies:** all. **Files:** `README.md`, `license_server/README.md`. **Scope:** S
 
+---
+
+## Phase 7: Named users and seats
+
+### Task 20: Users table, upgrade from the site password
+**Description:** `users` table in `logs/gate.db` (username, name, password hash, role
+`admin`/`operator`/`viewer`, active, created). Reuse `hash_password` / `check_password`. On
+start, a site with `site_password` and no users gets user `admin` with that same hash.
+
+**Acceptance criteria:**
+- [ ] An existing site logs in as `admin` with its old password, nothing else changes
+- [ ] Usernames unique (case-insensitive); passwords never stored or logged in plain text
+
+**Verification:** tests (test-driven): upgrade from a saved old `cameras.json` + `gate.db`.
+**Dependencies:** None. **Files:** `src/store.py`, `server.py`, `tests/test_users.py`. **Scope:** M
+
+### Task 21: Login by username, roles on every route
+**Description:** `/api/login` takes username + password; the cookie carries the user id inside
+the HMAC. A disabled user's cookie stops working at once. Each API route declares the lowest
+role allowed (viewer: records, Excel; operator: + live, fixes; admin: + settings, cameras,
+users, license).
+
+**Acceptance criteria:**
+- [ ] Every route in `server.py` has a role; a test lists routes and fails on one without
+- [ ] Viewer can't fix or change settings (403); disabled user is logged out
+- [ ] Wrong-password slow-down still works per device
+
+**Verification:** tests (test-driven); browser check in en/ar.
+**Dependencies:** Task 20. **Files:** `server.py`, `web/src/pages/Login.tsx`, `src/i18n.py`, `tests/test_server.py`. **Scope:** M
+
+### Task 22: Users page (admin)
+**Description:** Add, disable, reset password, change role. Shows "Users N of M" (M from the
+license, Task 24; 5 until then). Plain text for staff, en/ar.
+
+**Acceptance criteria:**
+- [ ] The last active admin can't be disabled or demoted
+- [ ] Over the limit: "Your license allows N users. Contact us to add 5 more."
+
+**Verification:** browser check en/ar; tests for the API rules. Build and commit `web/dist`.
+**Dependencies:** Task 21. **Files:** `web/src/pages/Users.tsx`, `server.py`, `src/i18n.py`. **Scope:** M
+
+### Task 23: Who fixed a reading
+**Description:** `corrected_by` column (additive), saved by `save_fix`, shown in the truck
+detail and as an Excel column; also written to `logs/corrections.jsonl`.
+
+**Acceptance criteria:**
+- [ ] Old rows show nothing; new fixes show the user's name
+**Verification:** tests. **Dependencies:** Task 21. **Files:** `src/store.py`, `src/config.py`, `web/src/components/TruckDetail.tsx`. **Scope:** S
+
+## Phase 8: License with edition, users, lanes
+
+### Task 24: New license fields and limits
+**Description:** Keys may carry `edition`, `users`, `lanes`. Missing = old key: users 5, lanes
+as today. Trial: 5 users, 2 lanes. Adding a user or a lane over the limit is refused with a
+plain message; existing users and lanes are never removed by a smaller key.
+
+**Acceptance criteria:**
+- [ ] Old keys from Task 12 still read and work
+- [ ] Limits enforced in the API, not only the page
+
+**Verification:** tests (test-driven). **Dependencies:** Tasks 12, 22. **Files:** `src/license.py`, `server.py`, `tests/test_license.py`. **Scope:** S
+
+### Task 25: License tool options, usage on the License card
+**Description:** `tools/license_tool.py --edition --users --lanes`; the License card shows
+edition, "Users 7 of 10", "Lanes 2 of 2".
+
+**Acceptance criteria:**
+- [ ] A key for 10 users, typed in, raises the limit with no restart
+**Verification:** manual + tests. **Dependencies:** Task 24. **Files:** `tools/license_tool.py`, `web/src/pages/License.tsx`. **Scope:** S
+
+### Checkpoint: User packs can be sold
+- [ ] Tests pass; code review; a site upgraded from a real old setup keeps working
+
+---
+
+## Phase 9: Enterprise central HQ
+
+### Task 26: `updated_at` and sync cursor
+**Description:** `updated_at` on every insert, merge and fix (additive column, old rows filled
+from date + time). `meta.sync_cursor` remembers what HQ has. `Store.changed_since(cursor, n)`.
+
+**Acceptance criteria:**
+- [ ] A fix moves the row past the cursor again; old databases upgrade, every row kept
+**Verification:** tests (test-driven). **Dependencies:** None. **Files:** `src/store.py`, `tests/test_store.py`. **Scope:** S
+
+### Task 27: HQ receive API
+**Description:** In central mode (`server.py --central`): admin creates a site and gets a
+one-time token (stored hashed). `POST /api/hq/rows` (batch upsert by site + row id),
+`PUT /api/hq/photos/{path}`, `POST /api/hq/heartbeat`. Token checked on every call.
+
+**Acceptance criteria:**
+- [ ] Re-sending the same batch adds nothing; a changed row updates
+- [ ] Wrong or revoked token refused; one site can't write another site's rows
+- [ ] Size limits on batches and photos
+
+**Verification:** tests (test-driven) with FastAPI's test client.
+**Dependencies:** Task 26. **Files:** `server.py`, `src/store.py`, `tests/test_hq.py`. **Scope:** M
+
+### Task 28: Site sync worker
+**Description:** A thread in the site app: every 30 s sends up to 200 changed rows, then
+their photos shrunk to ~1280 px, then a heartbeat each minute. Backs off when HQ is
+unreachable; never blocks detection; resumes from the cursor after a restart.
+
+**Acceptance criteria:**
+- [ ] HQ down for an hour: no errors on screen, catches up afterwards, no duplicates
+- [ ] Shows last successful sync time
+
+**Verification:** tests against a local HQ (test-driven); manual with the network cable out.
+**Dependencies:** Task 27. **Files:** `src/sync.py`, `server.py`, `tests/test_sync.py`. **Scope:** M
+
+### Task 29: HQ mode in the app
+**Description:** Central mode hides cameras/setup pages and adds a **Sites** page (online,
+last sync, trucks today, cameras down, license state) and a site filter in Records and day
+stats; Excel per site or for all sites.
+
+**Acceptance criteria:**
+- [ ] A site offline > 15 minutes shows as offline
+- [ ] Excel for all sites has a Site column
+
+**Verification:** browser check en/ar with 2 test sites; build and commit `web/dist`.
+**Dependencies:** Task 28. **Files:** `web/src/pages/Sites.tsx`, `web/src/pages/Records.tsx`, `server.py`, `src/store.py`, `src/i18n.py`. **Scope:** L
+
+### Task 30: Site Settings: Connect to HQ
+**Description:** Paste the HQ address and token; test the connection; show last sync and
+anything waiting to be sent. Disconnect stops sending.
+
+**Acceptance criteria:**
+- [ ] A wrong token shows a plain message, not an error code
+**Verification:** browser check en/ar. **Dependencies:** Task 28. **Files:** `web/src/pages/Setup.tsx`, `server.py`, `src/i18n.py`. **Scope:** S
+
+### Task 31: Site-scoped HQ users
+**Description:** An HQ user is either all sites or a list of sites; every HQ query filters by it.
+
+**Acceptance criteria:**
+- [ ] A site-scoped user can't see another site's rows or photos, even by guessing URLs
+**Verification:** tests (test-driven). **Dependencies:** Tasks 21, 29. **Files:** `server.py`, `tests/test_hq.py`. **Scope:** S
+
+### Task 32: Deploy HQ to a VPS
+**Description:** A KSA-region VPS: Caddy (HTTPS), the app as a service, nightly
+`sqlite3 .backup` + photos to separate storage, uptime monitor. `docs/hq-runbook.md`:
+new customer, restore from backup, update.
+
+**Acceptance criteria:**
+- [ ] HTTPS only; secrets not in the repo
+- [ ] Restore from last night's backup tested once
+
+**Verification:** follow the runbook from scratch on a fresh VPS.
+**Dependencies:** Tasks 29-31. **Files:** `docs/hq-runbook.md`. **Scope:** M
+
+### Checkpoint: Enterprise works
+- [ ] Two sites sync to a test HQ, an hour offline, catch up, no duplicates
+- [ ] security-auditor review of the HQ API and sync
+
+---
+
+## Phase 10: Shipping to customers
+
+### Task 33: Site installer
+**Description:** One `setup.exe` (Inno Setup): app, Python 3.12, models, built web app,
+autostart, Windows firewall rule for port 8000 so other PCs on the site network can open it.
+
+**Acceptance criteria:**
+- [ ] Fresh Windows PC with no Python: install, open from a phone on the same Wi-Fi
+**Verification:** install on a clean machine or VM. **Dependencies:** None. **Files:** `installer/`. **Scope:** M
+
+### Task 34: Optional: compiled app
+**Description:** Nuitka build so the license check isn't plain Python source.
+**Acceptance criteria:**
+- [ ] Same tests pass against the compiled build
+**Dependencies:** Task 33. **Scope:** M
+
+### Task 35: Customer docs
+**Description:** Install checklist for the customer's IT, user guide for gate staff (en/ar),
+support contacts and response times.
+**Acceptance criteria:**
+- [ ] A site's IT can prepare PC, cameras and network from the checklist alone
+**Dependencies:** Tasks 33. **Files:** `docs/`. **Scope:** S
+
 ### Checkpoint: Complete
 - [ ] All acceptance criteria met, tests and build pass
 - [ ] Reviewed by you
