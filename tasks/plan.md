@@ -11,11 +11,14 @@ Previous plan (React app, done): [archive/plan-react-app.md](archive/plan-react-
    **verified**.
 2. **Licensing.** The app is activated with a signed license key that runs out (e.g. after
    a year). From 30 days before, staff see "contact us to renew". Renewal is a new key, typed
-   in or fetched automatically from a small license server you control.
+   in or fetched automatically from your **Control Center** (added 2026-10-28): your own
+   dashboard for every client's contract, license keys, site health and app version.
 3. **Editions and users (added 2026-10-20).** Two editions are sold as a yearly subscription:
    **Site** (one site, opened from the site network) and **Enterprise** (several sites + one
    central HQ for the manager). Users are sold in packs of 5, so the app needs named logins
    and seat limits. Prices: `Gate_Reader_Pricing.xlsx` (not committed).
+4. **Manager dashboards (added 2026-10-28).** A Site manager dashboard (one site) and an HQ
+   manager dashboard (all sites), with two new roles.
 
 ## What the code does today (why this needs a design, not a tweak)
 - Each camera runs its own `GateTracker` and logs its own rows (`cctv.py: watch`).
@@ -62,8 +65,8 @@ Previous plan (React app, done): [archive/plan-react-app.md](archive/plan-react-
 - **Bound to one computer.** The app shows a machine code (from Windows' machine ID); the key
   is issued for that code. A new laptop needs a re-issued key.
 - **Remote control is optional, never required.** When the site has internet, the app checks
-  in once a day with your license server: it picks up renewals automatically, and you can end
-  a license early. Without internet everything still works until the key's end date, and
+  in with your Control Center (every 15 minutes, see below): it picks up renewals
+  automatically, and you can end a license early. Without internet everything still works until the key's end date, and
   renewal is done by typing in a new key.
 - **New installs: 14-day trial (decided).** Everything works for 14 days from first start,
   so setup and testing can happen before you issue the key for that computer.
@@ -139,6 +142,62 @@ Previous plan (React app, done): [archive/plan-react-app.md](archive/plan-react-
   codes from door markings, and white-container markings could still pass as plates.
 - **Installer signing (Task 33).** A code-signing certificate so Windows trusts `setup.exe`.
 
+### Control Center: your dashboard for every client (Phase 8, added 2026-10-28)
+```
+ Site PC (client A) ─┐  heartbeat every 15 min, HTTPS, outbound   ┌──────────────────────┐
+ Site PC (client B) ─┼──────────────────────────────────────────▶ │ Control Center (you) │ ◀── your browser
+ HQ server (client C)┘  ◀── newer key / "ended" in the answer      │ one KSA VPS, all     │     (password + 2FA)
+                                                                  │ clients              │ ──▶ email alerts
+                                                                  └──────────────────────┘
+```
+- **Separate app, separate folder** (`control/`, own FastAPI + SQLite + small React app),
+  never in a customer's installer. English only: it is your tool, not the gate staff's.
+- **What it holds:** clients, sites, contracts (start, end), every license key issued (the
+  ledger), deployments (machine code, edition, version) and their heartbeats (90 days).
+- **Renewal in one place:** pick the client, set the new end date (and users / lanes), the
+  Control Center signs the key, and the site picks it up at its next check-in. Sites with no
+  internet: copy the key and type it in, as before. `tools/license_tool.py` stays for offline use.
+- **Health:** each deployment is green / amber / red (silent > 2 h, camera down > 1 h, disk
+  < 10 %, license ending, errors); alerts by email, one daily summary.
+- **Versions:** each deployment reports its version; you see who is behind. Updates are
+  installed by you (remote session + installer); no automatic updates in v1.
+- **The private key lives on the Control Center server** (a secret file, plus an offline
+  backup), so renewals are one click. The price: if that server were broken into, someone could
+  make keys. Hence: password + authenticator code, admin pages limited to your IP if possible,
+  security review (Task 18), and key rotation by key id if it ever leaks.
+- **The heartbeat contract** (both sides build to this, so Tasks 15 and 16 can run in parallel):
+  `POST /v1/checkin` with `{license_id, machine, version, edition, state, health: {detection_running,
+  cameras_total, cameras_online, last_truck_at, trucks_today, check_rows_today, disk_free_gb,
+  errors_24h}}`; answer `{status: "active" | "ended", key?: "<newer key>"}`. No plates, container
+  numbers or photos are ever sent. Sent by `server.py` (always running, even when detection has stopped).
+
+### Manager dashboards and roles (Phase 9, added 2026-10-28)
+- **Roles:** Viewer (records, Excel) < Operator (gate staff: + live, fixes) < Site manager (+ Site
+  dashboard, their site's users) < Admin (+ cameras, settings, license). **HQ manager**: the HQ
+  dashboard and every site in their scope, read-only plus Excel.
+- **Site dashboard** (also in the Site edition: it helps sell): trucks in/out per hour and lane,
+  % verified, Check rows waiting, camera downtime, fixes per staff member, turnaround time.
+- **HQ dashboard:** every site side by side, which sites need attention first, trends; a click
+  opens a site's dashboard. The same pages work on our hosted HQ and on the customer's server.
+- **Turnaround time** (IN to OUT of the same container or plate) is new logic, kept as a pure
+  function so both dashboards share it.
+
+### Hosting: where each part runs (added 2026-10-28)
+| Part | Runs on | How | Who looks after it |
+|---|---|---|---|
+| Site edition, Enterprise option 1 sites | The customer's Windows PC at the gate | Installer (Task 33): app + detection as Windows services that start with the PC; staff open `http://<PC address>:8000` on the site network; firewall rule for port 8000; fixed address for the PC on their router | You, by remote session (AnyDesk) |
+| Enterprise option 1: HQ | One VPS per customer in a Saudi data centre | Docker Compose: Caddy (HTTPS, automatic certificate) + `server.py --central`; nightly backups; customer's own address such as `hq.<customer>.com` or one under your domain | You (in the HQ fee) |
+| Enterprise option 2: central install | The customer's server or VM in their data centre (Windows Server, or Linux) | Same app, central mode, reading each site's NVR over their network; opened on their intranet with their HTTPS certificate; needs CPU/GPU sized in Task 37 | Their IT, with your remote support over their VPN |
+| Control Center | One small VPS of yours (Saudi data centre) | Docker Compose: Caddy + `control/`; secrets as files; nightly backups | You |
+- Site PCs don't use Docker: a plain installer is lighter and easier for site IT, and OCR needs
+  the CPU. HQ and Control Center do: the same Compose file per customer makes each new HQ a
+  copy-and-fill-in job.
+- A site needs internet only for Control Center check-ins (and HQ sync in Enterprise). Option 2
+  customers often block outbound traffic: ask them to allow the Control Center's address, or
+  renew by typing in keys.
+- Licenses are bound to a machine code. A cloned VM can share Windows' machine ID, so option 2
+  installs get their key after the VM is final.
+
 ### How we build it (skills)
 - **Test-driven** for the lane tracker and the license checks (pure logic, many edge
   cases): tests first, from real failure cases.
@@ -205,21 +264,28 @@ Task numbers stay as first planned.
 
 ### Checkpoint: Site edition can be sold
 
-### Phase 8: Remote license control
-- [ ] Task 15: License server: daily check-in, renew and end licenses
-- [ ] Task 16: App checks in daily and picks up renewals
-- [ ] Task 17: Put the license server online (HTTPS) and renew a site remotely
-- [ ] Task 18: Security review of licensing, fix findings
+### Phase 8: Control Center (your dashboard for every client)
+- [ ] Task 15: Control Center server: clients, contracts, licenses, check-in, 2FA login
+- [ ] Task 16: App heartbeat every 15 minutes, picks up renewals
+- [ ] Task 40: Control Center pages: Clients, Renewals, Health, Versions
+- [ ] Task 41: Alerts to you by email
+- [ ] Task 42: Versions and releases (`VERSION`, `CHANGELOG.md`)
+- [ ] Task 17: Put the Control Center online (HTTPS) and renew a site remotely
+- [ ] Task 18: Security review of licensing and the Control Center, fix findings
 
 ### Checkpoint: Remote renewal works
 
-### Phase 9: Enterprise central HQ (hosted by us)
+### Phase 9: Enterprise: central HQ (hosted by us) and manager dashboards
 - [ ] Task 26: `updated_at` and sync cursor in the site database
 - [ ] Task 27: HQ receive API: enrol site, rows, photos, heartbeat
 - [ ] Task 28: Site sync worker: push, retry, resume after offline
 - [ ] Task 29: HQ mode in the app: site filter, Sites page, cross-site Excel
 - [ ] Task 30: Site Settings: Connect to HQ
 - [ ] Task 31: Site-scoped HQ users
+- [ ] Task 43: Manager roles (Site manager, HQ manager)
+- [ ] Task 44: Site manager dashboard
+- [ ] Task 45: Turnaround time (time in the yard)
+- [ ] Task 46: HQ manager dashboard
 - [ ] Task 32: Deploy HQ to a VPS, with a runbook
 
 ### Checkpoint: Two sites sync to a test HQ, survive an hour offline, no duplicates
@@ -279,7 +345,9 @@ time and they share one OCR engine, like the live service.
 | Private signing key leaked or lost | High | Kept outside the repo (git-ignored, checked by a test); one backup offline; key rotation supported by key id in each license |
 | Customer sets the PC clock back to extend the license | Low | Clock guard: the app remembers the latest time it has seen; a clock far behind it counts as the latest time |
 | License checks bypassed by editing Python source | Med | Deterrent only (stated above); optional later: compiled installer |
-| A license problem stops a gate mid-shift | High | Warnings start 30 days ahead, 14 days grace, never stops records or exports, license server outages never affect the app |
+| A license problem stops a gate mid-shift | High | Warnings start 30 days ahead, 14 days grace, never stops records or exports, Control Center outages never affect the app |
+| Control Center broken into: someone makes keys | Med | Password + authenticator code, admin pages limited to your IP, security review, key rotation by key id |
+| Two parallel sessions change the same file | Med | Each round's two tasks touch different files (todo.md, "Parallel work"); `web/dist` is built only after merging |
 | Upgrading to named users locks a site out | High | The old site password becomes user `admin` automatically; tested on a copy of a real `cameras.json` + `gate.db` |
 | Site internet is slow or metered (4G) | Med | Photos shrunk before sending, batches, resume where it stopped; sync never blocks detection |
 | HQ server down or lost | Med | Sites are unaffected (they keep everything); nightly backups; HQ can be rebuilt and sites re-send |
@@ -299,7 +367,7 @@ time and they share one OCR engine, like the live service.
    it's needed?
 4. **License details:** one license per computer (recommended)? A limit on cameras per
    license? What contact details should the renewal banner show? (needed for Task 13)
-5. **Remote control:** do sites have internet? Where should the license server run (a small
-   cloud server, ~$5/month, in your account)? (needed for Task 17)
+5. **Control Center:** do sites have internet? Which Saudi VPS provider and domain for the
+   Control Center? (needed for Task 17)
 6. **Enterprise on the customer's server:** does a customer want it, and on what hardware?
    (needed for Task 37)

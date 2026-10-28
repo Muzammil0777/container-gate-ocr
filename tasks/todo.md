@@ -5,10 +5,56 @@ Previous tasks (React app, done): [archive/todo-react-app.md](archive/todo-react
 
 Checks used below:
 - **Tests:** `py -3.12 -m pytest`
-- **Build:** `cd web && npm run build` (commit `web/dist` after any `web/src` change)
+- **Build:** `cd web && npm run build` (on `react-app` after merging; task branches don't commit `web/dist`)
 - **Run:** `py -3.12 server.py --open` and `py -3.12 cctv.py --config cameras.json`
 
 Phases are in build order (reordered 2026-10-28); task numbers stay as first planned.
+
+## Parallel work: two sessions in Orca (added 2026-10-28)
+
+Two Claude Code sessions, each in its own Orca worktree, each on its own branch from
+`react-app`. Rules for the sessions: `CLAUDE.md`, "Parallel work". Each session owns a set of
+files, so the two never edit the same file in a round:
+
+- **Session A, "App":** `server.py`, `web/src/`, `src/store.py`, `src/i18n.py`, `src/license.py`,
+  `src/config.py`, `src/checkin.py`.
+- **Session B, "Engine and tools":** `cctv.py`, `src/gate.py`, the OCR files (`src/recognizer.py`,
+  `src/scanner.py`, `src/iso6346.py`, `src/saudi_plate.py`), `src/lanes.py`, `src/camera.py`,
+  `src/sync.py`, `src/turnaround.py`, `bench.py`, `tools/`, `control/`, `installer/`, `deploy/`,
+  `docs/`, `README.md`, `VERSION`, `CHANGELOG.md`.
+- Exceptions are named in the table (e.g. Task 14 edits `cctv.py`: session B is in `control/` then).
+
+| Round | Session A (App) | Session B (Engine and tools) | Needs from you |
+|---|---|---|---|
+| 1 | Task 8: Cameras page, lanes | Task 6: service runs cameras by lane | |
+| 2 | Task 9: Records, verified badge, photos | Task 36: accuracy (yard parts; night when recordings come) | |
+| 3 | Task 10: wizard, then Task 13: activation screen (test key pair) | Task 12: license tool | |
+| 4 | Task 20, then 21: users, login by username | Task 15: Control Center server | |
+| 5 | Task 22, then 23: Users page, who fixed it | Task 40: Control Center pages | |
+| 6 | Task 14 (also `cctv.py`), then 24: grace stop, license limits | Task 41, then 42: alerts, versions | |
+| 7 | Task 25, then 16: License card usage, heartbeat | Task 17: Control Center online (final check after Task 16 merges) | a Saudi VPS and a domain |
+| 8 | Task 39: import old Excel logs | Task 33, then 35, then 19: installer, customer docs, README | code-signing certificate |
+| - | Task 18: security review of the merged code (either session, fixes split by file) | | |
+| 9 | Task 26, then 27: `updated_at`, HQ receive API | Task 45: turnaround time | |
+| 10 | Task 29: HQ mode pages (tested with rows sent through Task 27's API) | Task 28: site sync worker | |
+| 11 | Task 30, then 31: Connect to HQ, site-scoped users | Task 7 (ANPR), Task 37 (option 2) or Task 34, whichever is ready | ANPR camera / an option 2 customer |
+| 12 | Task 43, then 44: manager roles, Site dashboard | Task 32: HQ deploy files and runbook | a VPS for a test HQ |
+| 13 | Task 46: HQ dashboard | Task 32: deploy and restore test | |
+
+Any time: **Task 2** (ANPR camera test) is yours; Task 7 follows in session B in any round where
+session A isn't in `cctv.py` (not round 6). **Task 38** (option 2 build) touches both
+sessions' files: split it by file after Task 37's design, when a customer chooses option 2.
+
+**A round, step by step**
+1. In Orca, make two worktrees from the latest `react-app`: branches `task/<n>-<short-name>`.
+2. Start Claude Code in each with: *"Do Task N from tasks/todo.md. Follow CLAUDE.md, Parallel
+   work."* (two tasks in a row: *"Do Task N, then Task M, one commit each."*)
+3. When both are done, in the main folder on `react-app`: merge each branch, run
+   `py -3.12 -m pytest`, then `cd web && npm run build` and commit `web/dist` ("Build web/dist").
+4. Remove the two worktrees; start the next round from the new `react-app`.
+
+A session that finishes early can take its next task only if it touches none of the other
+session's current files.
 
 ---
 
@@ -370,59 +416,107 @@ a new computer, backing up the private key.
 
 ---
 
-## Phase 8: Remote license control
+## Phase 8: Control Center (your dashboard for every client)
 
-### Task 15: License server
-**Description:** `license_server/` (separate small FastAPI app, own SQLite): `POST /v1/checkin`
-(license id, machine code, app version) answers active / ended plus a newer key if you renewed;
-admin commands (renew, end, list) protected by an admin token. Holds the private key as a
-secret setting, never in the repo.
+A separate app that only you use, hosted once for all clients: clients, contracts, licenses,
+renewal keys, the health of every deployed site and which version it runs. It replaces the
+plain license server. Design and check-in contract: plan.md, "Control Center".
 
-**Acceptance criteria:**
-- [ ] Renew: next check-in returns the new key; End: next check-in returns ended
-- [ ] Wrong admin token refused; check-ins rate-limited
-
-**Verification:** tests with FastAPI's test client.
-**Dependencies:** Task 12. **Files:** `license_server/app.py`, `license_server/tests/test_app.py`, `license_server/README.md`. **Scope:** M
-
-### Task 16: App checks in daily
-**Description:** The detection service checks in once a day when online (5 s timeout, never
-blocks or slows the gate), saves a newer key, and applies an "ended" answer. The License card
-shows the last check-in.
+### Task 15: Control Center server
+**Description:** `control/` (its own small FastAPI app and SQLite, never shipped to customers):
+clients, sites, deployments (machine code, edition, version), contracts (start, end), licenses
+(every key issued, the ledger) and heartbeats (kept 90 days). `POST /v1/checkin` takes the
+contract in plan.md and answers active / ended plus a newer key when you renewed. Admin login
+with password + authenticator code (TOTP). Signs keys with the same code as
+`tools/license_tool.py` (Task 12); the private key is a secret file on the server, never in the repo.
 
 **Acceptance criteria:**
-- [ ] No internet / server down: nothing changes, no errors on screen
-- [ ] Renewed on the server: the site shows the new end date within a day (or at once with *Check now*)
+- [ ] Renew: the next check-in returns the new key; End: the next check-in returns ended
+- [ ] Wrong password or code refused and slowed down; check-ins rate-limited; a check-in can
+      only report for its own license and machine
+- [ ] A test fails if a private key file is ever inside the repo
 
-**Verification:** tests against a local license server; manual.
-**Dependencies:** Tasks 14, 15. **Files:** `src/license.py`, `cctv.py`, `web/src/pages/License.tsx`. **Scope:** S
+**Verification:** tests (test-driven) with FastAPI's test client.
+**Dependencies:** Task 12. **Files:** `control/app.py`, `control/store.py`, `control/tests/`. **Scope:** M
 
-### Task 17: Put the license server online
-**Description:** Deploy `license_server/` to the host you choose (HTTPS), set the private key
-and admin token as secrets, and renew a test site from your laptop.
+### Task 16: App heartbeat and renewals
+**Description:** The web app (`server.py`, which keeps running even when detection is stopped)
+sends a heartbeat every 15 minutes when online: version, license state, detection running,
+cameras online, last truck time, trucks and Check rows today, disk free, errors in the last 24 h
+(from `logs/live/status.json` and the database). It saves a newer key and applies "ended".
+5 s timeout, never blocks or slows the gate; no plates, container numbers or photos are sent.
+The License card shows the last check-in and a *Check now* button.
 
 **Acceptance criteria:**
-- [ ] HTTPS only; secrets not in the repo or logs
-- [ ] A test site picks up a remote renewal
+- [ ] No internet / Control Center down: nothing changes, no errors on screen
+- [ ] Renewed in the Control Center: the site shows the new end date within 15 minutes (or at once with *Check now*)
 
-**Verification:** end-to-end renewal; `license_server/README.md` steps followed exactly.
-**Dependencies:** Task 16, your hosting account. **Files:** `license_server/README.md`. **Scope:** S
+**Verification:** tests against a local Control Center; manual.
+**Dependencies:** Tasks 14, 15. **Files:** `src/checkin.py`, `src/license.py`, `server.py`, `web/src/pages/License.tsx`, `src/i18n.py`. **Scope:** M
 
-### Task 18: Security review of licensing
-**Description:** security-auditor agent reviews `src/license.py`, `tools/`, `license_server/`
-and the app's license endpoints; fix every confirmed finding.
+### Task 40: Control Center app (pages)
+**Description:** `control/web` (its own small React app, English only: it is your tool, not the
+customer's). Pages: **Clients** (sites, edition, users and lanes bought, contract end);
+**Client** (each site's deployments, licenses issued, health over time, notes); **Renewals**
+(contracts ending in 60 / 30 days, *Issue renewal key*: new end date, users, lanes; delivered at
+the next check-in, also copyable for sites with no internet); **Health** (every deployment green /
+amber / red: silent, cameras down, disk low, license ending); **Versions** (who runs what, latest release).
+
+**Acceptance criteria:**
+- [ ] A renewal is done in one place: pick the client, set the new end date, the site picks it up
+- [ ] A site silent for over 2 hours shows red with when it was last seen
+
+**Verification:** browser check against a local Control Center with 3 fake deployments sending heartbeats.
+**Dependencies:** Task 15. **Files:** `control/web/`, `control/app.py`. **Scope:** L
+
+### Task 41: Alerts to you
+**Description:** Email (SMTP) when: a deployment is silent > 2 h, a camera is offline > 1 h, disk
+< 10 %, a license ends in 30 / 7 days, errors jump. One daily summary. Each alert once, then a
+reminder a day later, not every 15 minutes. WhatsApp later if email isn't enough.
+
+**Acceptance criteria:**
+- [ ] Each rule tested with fake heartbeats; no repeat alert within a day
+**Verification:** tests; one real email to you. **Dependencies:** Task 15. **Files:** `control/alerts.py`, `control/tests/`. **Scope:** S
+
+### Task 42: Versions and releases
+**Description:** One version number for the app (`VERSION`, e.g. 1.4.0) shown in the app, sent
+in the heartbeat and in the installer's name; `CHANGELOG.md` in plain words. The Control Center
+holds the latest version and marks older deployments. Updates are installed by you (remote
+session + new installer); no automatic updates in v1.
+
+**Acceptance criteria:**
+- [ ] The Versions page shows which clients are behind and since when
+**Verification:** tests; manual. **Dependencies:** Task 40. **Files:** `VERSION`, `CHANGELOG.md`, `control/`. **Scope:** S
+
+### Task 17: Put the Control Center online
+**Description:** One small VPS in a Saudi data centre: Docker Compose (Caddy for HTTPS + the
+app), private key, admin password and SMTP as secret files, nightly database backup to separate
+storage, an offline backup of the private key. The admin pages may also be limited to your IP;
+the check-in address stays open (rate-limited).
+
+**Acceptance criteria:**
+- [ ] HTTPS only; secrets not in the repo or logs; restore from backup tested once
+- [ ] A test site picks up a renewal made in the online Control Center
+
+**Verification:** `control/README.md` steps followed exactly on a fresh VPS.
+**Dependencies:** Tasks 16, 40, your VPS. **Files:** `control/README.md`, `control/deploy/`. **Scope:** M
+
+### Task 18: Security review of licensing and the Control Center
+**Description:** security-auditor agent reviews `src/license.py`, `src/checkin.py`, `tools/`,
+`control/` and the app's license endpoints; fix every confirmed finding.
 
 **Acceptance criteria:**
 - [ ] No high or medium findings left open
 **Verification:** review report; tests for each fix.
 **Dependencies:** Task 17. **Scope:** S
 
-### Checkpoint: Remote renewal works
-- [ ] Renew and end a test license remotely; app unaffected while the server is down
+### Checkpoint: Control Center works
+- [ ] Renew and end a test license from the online Control Center; health of 2 test sites shown;
+      sites unaffected while the Control Center is down
 
 ---
 
-## Phase 9: Enterprise central HQ (hosted by us)
+## Phase 9: Enterprise: central HQ (hosted by us) and manager dashboards
 
 ### Task 26: `updated_at` and sync cursor
 **Description:** `updated_at` on every insert, merge and fix (additive column, old rows filled
@@ -455,7 +549,8 @@ unreachable; never blocks detection; resumes from the cursor after a restart.
 - [ ] Shows last successful sync time
 
 **Verification:** tests against a local HQ (test-driven); manual with the network cable out.
-**Dependencies:** Task 27. **Files:** `src/sync.py`, `server.py`, `tests/test_sync.py`. **Scope:** M
+**Dependencies:** Task 27. **Files:** `src/sync.py`, `tests/test_sync.py` (started from
+`server.py` in Task 30, so this task can run beside app work). **Scope:** M
 
 ### Task 29: HQ mode in the app
 **Description:** Central mode hides cameras/setup pages and adds a **Sites** page (online,
@@ -484,6 +579,53 @@ anything waiting to be sent. Disconnect stops sending.
 - [ ] A site-scoped user can't see another site's rows or photos, even by guessing URLs
 **Verification:** tests (test-driven). **Dependencies:** Tasks 21, 29. **Files:** `server.py`, `tests/test_hq.py`. **Scope:** S
 
+### Task 43: Manager roles
+**Description:** Two more roles next to Viewer, Operator and Admin: **Site manager** (everything
+at their site except cameras, settings and license; manages their site's users; sees the Site
+dashboard) and **HQ manager** (the HQ dashboard and every site in their scope, read and Excel;
+no camera settings). Every API route keeps a lowest role (Task 21's route test).
+
+**Acceptance criteria:**
+- [ ] A site manager can't open cameras, settings or license, nor another site's data
+- [ ] Existing users keep their roles after the upgrade
+
+**Verification:** tests (test-driven). **Dependencies:** Tasks 21, 31. **Files:** `server.py`, `src/store.py`, `web/src/pages/Users.tsx`, `src/i18n.py`. **Scope:** S
+
+### Task 44: Site manager dashboard
+**Description:** A Dashboard page for one site (also offered in the Site edition): today / this
+week / this month: trucks in and out, trucks per hour, per lane, % verified, Check rows waiting
+(link to them), cameras now and downtime today, fixes per staff member, busiest hours, and the
+same period last week for comparison. Plain words, an (i) on every number.
+
+**Acceptance criteria:**
+- [ ] Numbers match the Records page for the same day (tested on a sample database)
+- [ ] English and Arabic, phone width
+
+**Verification:** API tests for the numbers; browser check en/ar. Use the dataviz skill for the charts.
+**Dependencies:** Tasks 9, 43. **Files:** `web/src/pages/Dashboard.tsx`, `server.py`, `src/store.py`, `src/i18n.py`. **Scope:** M
+
+### Task 45: Turnaround time (time in the yard)
+**Description:** Pair each IN row with the next OUT row of the same container (or plate when
+there's no container): time in the yard, trucks still inside, longest stays. A pure function
+over rows (`src/turnaround.py`), used by both dashboards.
+
+**Acceptance criteria:**
+- [ ] Tested cases: normal in/out, out without in, in twice, a fixed reading that changes the pair
+**Verification:** tests (test-driven). **Dependencies:** Task 6 (lanes have a direction). **Files:** `src/turnaround.py`, `tests/test_turnaround.py`. **Scope:** S
+
+### Task 46: HQ manager dashboard
+**Description:** All sites in the HQ manager's scope in one view: trucks today and this week per
+site, % verified, Check rows waiting, sites offline and cameras down, turnaround per site, a trend
+chart and the sites that need attention first. A click on a site opens its Site dashboard
+(read-only). Works in HQ mode (this phase) and on the customer's server (Task 38).
+
+**Acceptance criteria:**
+- [ ] A scoped HQ manager sees only their sites, even by guessing URLs
+- [ ] Per-site numbers match each site's own dashboard
+
+**Verification:** API tests with 2 test sites; browser check en/ar.
+**Dependencies:** Tasks 29, 31, 43, 44, 45. **Files:** `web/src/pages/HqDashboard.tsx`, `server.py`, `src/store.py`, `src/i18n.py`. **Scope:** M
+
 ### Task 32: Deploy HQ to a VPS
 **Description:** A KSA-region VPS: Caddy (HTTPS), the app as a service, nightly
 `sqlite3 .backup` + photos to separate storage, uptime monitor. `docs/hq-runbook.md`:
@@ -494,7 +636,7 @@ new customer, restore from backup, update.
 - [ ] Restore from last night's backup tested once
 
 **Verification:** follow the runbook from scratch on a fresh VPS.
-**Dependencies:** Tasks 29-31. **Files:** `docs/hq-runbook.md`. **Scope:** M
+**Dependencies:** Tasks 29-31, 46. **Files:** `docs/hq-runbook.md`, `deploy/hq/`. **Scope:** M
 
 ### Checkpoint: Enterprise works
 - [ ] Two sites sync to a test HQ, an hour offline, catch up, no duplicates
@@ -522,7 +664,8 @@ link going down looks like (that site pauses, Live shows it offline).
 ### Task 38: Enterprise on the customer's server: build
 **Description:** Central mode that reads cameras: cameras and lanes carry a site; Live, Records,
 day stats and Excel filter by the user's sites; the Sites page shows each site's cameras online or
-offline. The license carries the central edition and its lane count.
+offline; the Site and HQ dashboards (Tasks 44-46) work the same. The license carries the
+central edition and its lane count.
 
 **Acceptance criteria:**
 - [ ] Two test sites (fake recorders) on one install: each site's user sees only its own trucks
