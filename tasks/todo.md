@@ -8,6 +8,8 @@ Checks used below:
 - **Build:** `cd web && npm run build` (commit `web/dist` after any `web/src` change)
 - **Run:** `py -3.12 server.py --open` and `py -3.12 cctv.py --config cameras.json`
 
+Phases are in build order (reordered 2026-10-28); task numbers stay as first planned.
+
 ---
 
 ## Phase 0: Evidence first
@@ -133,6 +135,22 @@ format) with its plate photo, and feeds the lane. Reconnects like video streams 
 **Verification:** tests on the fixtures; manual run against the real camera.
 **Dependencies:** Tasks 2, 6. **Files:** `src/anpr.py`, `cctv.py`, `tests/test_anpr.py`. **Scope:** M
 
+### Task 36: Accuracy on real yard footage
+**Description:** Fix what the 2.5K yard recording showed (2026-10-28) and test at night.
+(1) Junk container codes next to the real one ('CAAU 250015 ?', 'DLAU161707?' from the door
+markings), which once opened a junk row: find which pass makes them (zoom, vertical, stitched
+fragments) before fixing. (2) Plates read from dark print on white containers (reefers): the
+dark-on-light check only stops white paint on dark doors. (3) Night/IR recordings from the site
+cameras.
+
+**Acceptance criteria:**
+- [ ] The yard frames give only CAAU 987321 0, no extra codes, still 22/22
+- [ ] A marking on a white container is not a plate; the 3 real plates in images/ still read
+- [ ] Night recording replayed: rows match what a person sees; misses listed in plan.md
+
+**Verification:** tests from small saved crops under `tests/data/` (no full videos); replay with `bench.py`.
+**Dependencies:** Task 6; night recordings (Open Question 2). **Files:** `src/recognizer.py`, `src/iso6346.py`, `tests/test_samples.py`. **Scope:** M
+
 ### Checkpoint: End to end with real recordings
 - [ ] Real recordings replayed: rows match what a person sees in the videos; speed acceptable
 
@@ -239,73 +257,7 @@ corrections and downloads keep working. A new key restarts detection within a mi
 
 ---
 
-## Phase 5: Remote license control
-
-### Task 15: License server
-**Description:** `license_server/` (separate small FastAPI app, own SQLite): `POST /v1/checkin`
-(license id, machine code, app version) answers active / ended plus a newer key if you renewed;
-admin commands (renew, end, list) protected by an admin token. Holds the private key as a
-secret setting, never in the repo.
-
-**Acceptance criteria:**
-- [ ] Renew: next check-in returns the new key; End: next check-in returns ended
-- [ ] Wrong admin token refused; check-ins rate-limited
-
-**Verification:** tests with FastAPI's test client.
-**Dependencies:** Task 12. **Files:** `license_server/app.py`, `license_server/tests/test_app.py`, `license_server/README.md`. **Scope:** M
-
-### Task 16: App checks in daily
-**Description:** The detection service checks in once a day when online (5 s timeout, never
-blocks or slows the gate), saves a newer key, and applies an "ended" answer. The License card
-shows the last check-in.
-
-**Acceptance criteria:**
-- [ ] No internet / server down: nothing changes, no errors on screen
-- [ ] Renewed on the server: the site shows the new end date within a day (or at once with *Check now*)
-
-**Verification:** tests against a local license server; manual.
-**Dependencies:** Tasks 14, 15. **Files:** `src/license.py`, `cctv.py`, `web/src/pages/License.tsx`. **Scope:** S
-
-### Task 17: Put the license server online
-**Description:** Deploy `license_server/` to the host you choose (HTTPS), set the private key
-and admin token as secrets, and renew a test site from your laptop.
-
-**Acceptance criteria:**
-- [ ] HTTPS only; secrets not in the repo or logs
-- [ ] A test site picks up a remote renewal
-
-**Verification:** end-to-end renewal; `license_server/README.md` steps followed exactly.
-**Dependencies:** Task 16, your hosting account. **Files:** `license_server/README.md`. **Scope:** S
-
-### Checkpoint: Remote renewal works
-- [ ] Renew and end a test license remotely; app unaffected while the server is down
-
----
-
-## Phase 6: Release
-
-### Task 18: Security review of licensing
-**Description:** security-auditor agent reviews `src/license.py`, `tools/`, `license_server/`
-and the app's license endpoints; fix every confirmed finding.
-
-**Acceptance criteria:**
-- [ ] No high or medium findings left open
-**Verification:** review report; tests for each fix.
-**Dependencies:** Task 17. **Scope:** S
-
-### Task 19: README for sites, renewal guide for you
-**Description:** README: lanes and camera roles, ANPR setup, what customers see before and
-after the license end date. A private guide for you: making keys, renewing, moving a site to
-a new computer, backing up the private key.
-
-**Acceptance criteria:**
-- [ ] A new site can be set up with lanes and activated from the README alone
-**Verification:** walk through on a fresh copy.
-**Dependencies:** all. **Files:** `README.md`, `license_server/README.md`. **Scope:** S
-
----
-
-## Phase 7: Named users and seats
+## Phase 5: Named users and seats
 
 ### Task 20: Users table, upgrade from the site password
 **Description:** `users` table in `logs/gate.db` (username, name, password hash, role
@@ -352,7 +304,9 @@ detail and as an Excel column; also written to `logs/corrections.jsonl`.
 - [ ] Old rows show nothing; new fixes show the user's name
 **Verification:** tests. **Dependencies:** Task 21. **Files:** `src/store.py`, `src/config.py`, `web/src/components/TruckDetail.tsx`. **Scope:** S
 
-## Phase 8: License with edition, users, lanes
+---
+
+## Phase 6: License with edition, users, lanes
 
 ### Task 24: New license fields and limits
 **Description:** Keys may carry `edition`, `users`, `lanes`. Missing = old key: users 5, lanes
@@ -378,7 +332,97 @@ edition, "Users 7 of 10", "Lanes 2 of 2".
 
 ---
 
-## Phase 9: Enterprise central HQ
+## Phase 7: Ship the Site edition
+
+### Task 33: Site installer
+**Description:** One `setup.exe` (Inno Setup): app, Python 3.12, models, built web app,
+autostart, Windows firewall rule for port 8000 so other PCs on the site network can open it.
+Signed with our code-signing certificate, so Windows trusts it.
+
+**Acceptance criteria:**
+- [ ] Fresh Windows PC with no Python: install, open from a phone on the same Wi-Fi
+- [ ] Windows shows our name as publisher, no "unknown publisher" warning; the certificate's key
+      stays outside the repo
+**Verification:** install on a clean machine or VM. **Dependencies:** a code-signing certificate
+(yours, ~SAR 1,500/year). **Files:** `installer/`. **Scope:** M
+
+### Task 35: Customer docs
+**Description:** Install checklist for the customer's IT, user guide for gate staff (en/ar),
+support contacts and response times.
+**Acceptance criteria:**
+- [ ] A site's IT can prepare PC, cameras and network from the checklist alone
+**Dependencies:** Tasks 33. **Files:** `docs/`. **Scope:** S
+
+### Task 19: README for sites, renewal guide for you
+**Description:** README: lanes and camera roles, ANPR setup, what customers see before and
+after the license end date. A private guide for you: making keys, renewing, moving a site to
+a new computer, backing up the private key.
+
+**Acceptance criteria:**
+- [ ] A new site can be set up with lanes and activated from the README alone
+**Verification:** walk through on a fresh copy.
+**Dependencies:** Tasks 10, 14, 25, 33 (the remote-renewal steps are added with Task 17).
+**Files:** `README.md`, `license_server/README.md`. **Scope:** S
+
+### Checkpoint: Site edition can be sold
+- [ ] A fresh PC: install, activate with a real key, set up a lane, log trucks, using only the
+      README and customer docs
+
+---
+
+## Phase 8: Remote license control
+
+### Task 15: License server
+**Description:** `license_server/` (separate small FastAPI app, own SQLite): `POST /v1/checkin`
+(license id, machine code, app version) answers active / ended plus a newer key if you renewed;
+admin commands (renew, end, list) protected by an admin token. Holds the private key as a
+secret setting, never in the repo.
+
+**Acceptance criteria:**
+- [ ] Renew: next check-in returns the new key; End: next check-in returns ended
+- [ ] Wrong admin token refused; check-ins rate-limited
+
+**Verification:** tests with FastAPI's test client.
+**Dependencies:** Task 12. **Files:** `license_server/app.py`, `license_server/tests/test_app.py`, `license_server/README.md`. **Scope:** M
+
+### Task 16: App checks in daily
+**Description:** The detection service checks in once a day when online (5 s timeout, never
+blocks or slows the gate), saves a newer key, and applies an "ended" answer. The License card
+shows the last check-in.
+
+**Acceptance criteria:**
+- [ ] No internet / server down: nothing changes, no errors on screen
+- [ ] Renewed on the server: the site shows the new end date within a day (or at once with *Check now*)
+
+**Verification:** tests against a local license server; manual.
+**Dependencies:** Tasks 14, 15. **Files:** `src/license.py`, `cctv.py`, `web/src/pages/License.tsx`. **Scope:** S
+
+### Task 17: Put the license server online
+**Description:** Deploy `license_server/` to the host you choose (HTTPS), set the private key
+and admin token as secrets, and renew a test site from your laptop.
+
+**Acceptance criteria:**
+- [ ] HTTPS only; secrets not in the repo or logs
+- [ ] A test site picks up a remote renewal
+
+**Verification:** end-to-end renewal; `license_server/README.md` steps followed exactly.
+**Dependencies:** Task 16, your hosting account. **Files:** `license_server/README.md`. **Scope:** S
+
+### Task 18: Security review of licensing
+**Description:** security-auditor agent reviews `src/license.py`, `tools/`, `license_server/`
+and the app's license endpoints; fix every confirmed finding.
+
+**Acceptance criteria:**
+- [ ] No high or medium findings left open
+**Verification:** review report; tests for each fix.
+**Dependencies:** Task 17. **Scope:** S
+
+### Checkpoint: Remote renewal works
+- [ ] Renew and end a test license remotely; app unaffected while the server is down
+
+---
+
+## Phase 9: Enterprise central HQ (hosted by us)
 
 ### Task 26: `updated_at` and sync cursor
 **Description:** `updated_at` on every insert, merge and fix (additive column, old rows filled
@@ -458,15 +502,55 @@ new customer, restore from backup, update.
 
 ---
 
-## Phase 10: Shipping to customers
+## Phase 10: Enterprise on the customer's server (when a customer chooses it)
 
-### Task 33: Site installer
-**Description:** One `setup.exe` (Inno Setup): app, Python 3.12, models, built web app,
-autostart, Windows firewall rule for port 8000 so other PCs on the site network can open it.
+### Task 37: Enterprise on the customer's server: design and sizing test
+**Description:** Option 2 in the pricing guide: one central install on the customer's server reads
+every site's cameras through each site's NVR over the company network; staff at each site open
+the same app and see only their own site. Decide how a site is stored (a `site` on lanes and rows,
+shared with Phase 9), how many lanes one machine reads (CPU cores vs NVIDIA GPU), and what a site's
+link going down looks like (that site pauses, Live shows it offline).
 
 **Acceptance criteria:**
-- [ ] Fresh Windows PC with no Python: install, open from a phone on the same Wi-Fi
-**Verification:** install on a clean machine or VM. **Dependencies:** None. **Files:** `installer/`. **Scope:** M
+- [ ] Design written in plan.md, reusing Phase 9's site column and site-scoped users (Task 31)
+- [ ] `bench.py` with 8 lanes on the target hardware (or a VM that size): the guide's sizing
+      (32 cores or one GPU, 64 GB, 2-4 Mbit/s per camera) confirmed or corrected
+
+**Verification:** numbers recorded in plan.md; the pricing guide updated if they differ.
+**Dependencies:** Tasks 6, 29, 31; a customer choosing Option 2. **Files:** `tasks/plan.md`, `bench.py`. **Scope:** M
+
+### Task 38: Enterprise on the customer's server: build
+**Description:** Central mode that reads cameras: cameras and lanes carry a site; Live, Records,
+day stats and Excel filter by the user's sites; the Sites page shows each site's cameras online or
+offline. The license carries the central edition and its lane count.
+
+**Acceptance criteria:**
+- [ ] Two test sites (fake recorders) on one install: each site's user sees only its own trucks
+      and photos, even by guessing URLs
+- [ ] One site's recorder offline pauses only that site
+
+**Verification:** tests (test-driven) for site scoping; browser check en/ar; build and commit `web/dist`.
+**Dependencies:** Task 37. **Files:** `cctv.py`, `server.py`, `src/lanes.py`, `src/store.py`, `src/license.py`, `web/src/pages/`. **Scope:** L
+
+### Checkpoint: Enterprise on a customer's server works
+- [ ] Two test sites on one install, each sees only its own; security-auditor review of site scoping
+
+---
+
+## Phase 11: Extras
+
+### Task 39: Import old gate logs from Excel
+**Description:** A tool for the paid "Import old Excel logs" service: read a customer's old gate
+log (their columns mapped once: date, time, container, plate, direction), check each container
+number with the check digit, and add the rows to `logs/gate.db` marked as imported (no photos).
+Excel files are then rebuilt from the database as usual.
+
+**Acceptance criteria:**
+- [ ] Re-running the same file adds nothing; rows that can't be read are listed in a report, never dropped silently
+- [ ] Imported rows are marked as such in Records and Excel
+
+**Verification:** tests with a small sample workbook.
+**Dependencies:** None (easier after Task 26). **Files:** `tools/import_excel.py`, `src/store.py`, `tests/test_import.py`. **Scope:** M
 
 ### Task 34: Optional: compiled app
 **Description:** Nuitka build so the license check isn't plain Python source.
@@ -474,12 +558,7 @@ autostart, Windows firewall rule for port 8000 so other PCs on the site network 
 - [ ] Same tests pass against the compiled build
 **Dependencies:** Task 33. **Scope:** M
 
-### Task 35: Customer docs
-**Description:** Install checklist for the customer's IT, user guide for gate staff (en/ar),
-support contacts and response times.
-**Acceptance criteria:**
-- [ ] A site's IT can prepare PC, cameras and network from the checklist alone
-**Dependencies:** Tasks 33. **Files:** `docs/`. **Scope:** S
+---
 
 ### Checkpoint: Complete
 - [ ] All acceptance criteria met, tests and build pass

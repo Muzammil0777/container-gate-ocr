@@ -76,7 +76,7 @@ Previous plan (React app, done): [archive/plan-react-app.md](archive/plan-react-
   comes from compiling the app into an installer and from the sales contract (optional
   later phase).
 
-### Named users and seats (Phase 7)
+### Named users and seats (Phase 5)
 - Today each site has **one shared password** (`server.py`, `site_password`), so users can't
   be counted. A `users` table in `logs/gate.db`: username, display name, password hash (same
   PBKDF2 as now), role, active, created.
@@ -90,7 +90,7 @@ Previous plan (React app, done): [archive/plan-react-app.md](archive/plan-react-
 - Adding a user over the license limit shows "Your license allows N users. Contact us to add
   5 more." Disabling a user frees a seat.
 
-### License carries edition, users, lanes (Phase 8)
+### License carries edition, users, lanes (Phase 6)
 - Key gets `edition` (`site` / `enterprise`), `users`, `lanes`. Old keys keep working:
   missing `users` = 5, missing `lanes` = cameras as today. Trial = 5 users, 2 lanes.
 - **Adding 5 users = a new key**, typed in or picked up by the daily check-in (Tasks 15-16).
@@ -116,7 +116,7 @@ Previous plan (React app, done): [archive/plan-react-app.md](archive/plan-react-
 - **HQ = same code in central mode** (`server.py --central`): same `Store` with a `site`
   column, same React app with a site filter, a **Sites page** (online/offline, last sync,
   trucks today, cameras down) and Excel per site or across sites.
-- **Who sees what:** Phase 7 users plus a site scope: an HQ manager sees all sites, a site
+- **Who sees what:** Phase 5 users plus a site scope: an HQ manager sees all sites, a site
   supervisor only theirs. HQ users count toward the company's user packs.
 - **Hosting:** one small VPS **per customer** (data kept apart, simple to price) in a
   Riyadh/Jeddah data centre (PDPL: data stays in KSA). Caddy for HTTPS, runs as a service,
@@ -124,6 +124,20 @@ Previous plan (React app, done): [archive/plan-react-app.md](archive/plan-react-
   (setting), rows forever.
 - **Not in v1 (add when a customer asks):** changing site settings from HQ (remote desktop
   for now), email/WhatsApp alerts, Postgres (SQLite is fine below ~20 sites).
+
+### Added 2026-10-28 (from the pricing guide and the yard footage)
+- **Enterprise on the customer's server (Phase 10).** The pricing guide sells a second
+  Enterprise option: one central install on the customer's own server reads every site's
+  cameras through each site's NVR over their company network (central fee SAR 7,000; not yet
+  in `Gate_Reader_Pricing.xlsx`). No site PCs, no sync: it reuses Phase 9's site column and
+  site-scoped users. A site's link going down pauses that site's reading. Sizing in the guide
+  (8 lanes: ~32 cores or one NVIDIA GPU, 64 GB, 2-4 Mbit/s per camera) is an estimate until
+  Task 37 measures it. Built only when a customer chooses this option.
+- **Import old Excel logs (Task 39).** Sold as a one-time service. Imported rows go into
+  `logs/gate.db` (the master record) marked as imported; Excel is rebuilt from it as always.
+- **Accuracy (Task 36).** The yard recording read the container 22/22 but also produced junk
+  codes from door markings, and white-container markings could still pass as plates.
+- **Installer signing (Task 33).** A code-signing certificate so Windows trusts `setup.exe`.
 
 ### How we build it (skills)
 - **Test-driven** for the lane tracker and the license checks (pure logic, many edge
@@ -133,23 +147,27 @@ Previous plan (React app, done): [archive/plan-react-app.md](archive/plan-react-
   task in English and Arabic; one task = one commit, tests passing before each commit.
 
 ## Task List
+Phases are in build order (reordered 2026-10-28): first what the BAFCO deck already shows
+(lanes, verified rows), then what must exist before selling (users, license limits, installer).
+Task numbers stay as first planned.
 
 ### Phase 0: Evidence first (fail fast)
-- [ ] Task 1: Multi-camera speed test on this laptop
+- [x] Task 1: Multi-camera speed test on this laptop
 - [ ] Task 2: ANPR camera test (real camera)
 
 ### Checkpoint: Decide hardware and ANPR mode with you
 
 ### Phase 1: Lane foundation
-- [ ] Task 3: Database: verification and lane columns (old databases upgrade)
-- [ ] Task 4: Settings: lanes and camera roles (old settings keep working)
-- [ ] Task 5: Lane tracker: one truck from several cameras (test-driven)
+- [x] Task 3: Database: verification and lane columns (old databases upgrade)
+- [x] Task 4: Settings: lanes and camera roles (old settings keep working)
+- [x] Task 5: Lane tracker: one truck from several cameras (test-driven)
 
 ### Checkpoint: Lane logic
 
 ### Phase 2: Detection service
 - [ ] Task 6: Service runs cameras by lane, one row per truck with every camera's photo
 - [ ] Task 7: Hikvision ANPR events as the plate source (if Task 2 succeeds)
+- [ ] Task 36: Accuracy on real yard footage: junk container codes, white-container markings, night
 
 ### Checkpoint: End to end with real recordings
 
@@ -161,37 +179,41 @@ Previous plan (React app, done): [archive/plan-react-app.md](archive/plan-react-
 ### Checkpoint: Lanes complete
 
 ### Phase 4: License in the app
-- [ ] Task 11: License check: signed key, machine code, states, clock guard (test-driven)
+- [x] Task 11: License check: signed key, machine code, states, clock guard (test-driven)
 - [ ] Task 12: Your license tool: make keys, issue and inspect licenses
 - [ ] Task 13: Activation screen, License card, expiry banners
 - [ ] Task 14: After the grace period: detection stops, data stays available
 
 ### Checkpoint: Licensing works offline
 
-### Phase 5: Remote license control
-- [ ] Task 15: License server: daily check-in, renew and end licenses
-- [ ] Task 16: App checks in daily and picks up renewals
-- [ ] Task 17: Put the license server online (HTTPS) and renew a site remotely
-
-### Checkpoint: Remote renewal works
-
-### Phase 6: Release
-- [ ] Task 18: Security review of licensing, fix findings
-- [ ] Task 19: README for sites, renewal guide for you
-
-### Phase 7: Named users and seats
+### Phase 5: Named users and seats
 - [ ] Task 20: Users table, upgrade from the site password
 - [ ] Task 21: Login by username, roles checked on every API route
 - [ ] Task 22: Users page (admin)
 - [ ] Task 23: Who fixed a reading (`corrected_by`)
 
-### Phase 8: License with edition, users, lanes
+### Phase 6: License with edition, users, lanes
 - [ ] Task 24: New license fields, user and lane limits enforced
 - [ ] Task 25: License tool options, usage on the License card
 
 ### Checkpoint: User packs can be sold
 
-### Phase 9: Enterprise central HQ
+### Phase 7: Ship the Site edition
+- [ ] Task 33: Site installer (setup.exe, signed, autostart, firewall rule for port 8000)
+- [ ] Task 35: Customer docs (en/ar)
+- [ ] Task 19: README for sites, renewal guide for you
+
+### Checkpoint: Site edition can be sold
+
+### Phase 8: Remote license control
+- [ ] Task 15: License server: daily check-in, renew and end licenses
+- [ ] Task 16: App checks in daily and picks up renewals
+- [ ] Task 17: Put the license server online (HTTPS) and renew a site remotely
+- [ ] Task 18: Security review of licensing, fix findings
+
+### Checkpoint: Remote renewal works
+
+### Phase 9: Enterprise central HQ (hosted by us)
 - [ ] Task 26: `updated_at` and sync cursor in the site database
 - [ ] Task 27: HQ receive API: enrol site, rows, photos, heartbeat
 - [ ] Task 28: Site sync worker: push, retry, resume after offline
@@ -202,10 +224,15 @@ Previous plan (React app, done): [archive/plan-react-app.md](archive/plan-react-
 
 ### Checkpoint: Two sites sync to a test HQ, survive an hour offline, no duplicates
 
-### Phase 10: Shipping to customers
-- [ ] Task 33: Site installer (setup.exe, autostart, firewall rule for port 8000)
+### Phase 10: Enterprise on the customer's server (when a customer chooses it)
+- [ ] Task 37: Design and sizing test (8 lanes on one server)
+- [ ] Task 38: Central install reads every site's cameras, each site sees only its own
+
+### Checkpoint: Two test sites on one install, each sees only its own
+
+### Phase 11: Extras
+- [ ] Task 39: Import old gate logs from Excel (paid service)
 - [ ] Task 34: Optional: compiled app (Nuitka)
-- [ ] Task 35: Customer docs (en/ar)
 
 ### Checkpoint: Complete
 - [ ] All tests pass, build clean, reviewed by you
@@ -274,3 +301,5 @@ time and they share one OCR engine, like the live service.
    license? What contact details should the renewal banner show? (needed for Task 13)
 5. **Remote control:** do sites have internet? Where should the license server run (a small
    cloud server, ~$5/month, in your account)? (needed for Task 17)
+6. **Enterprise on the customer's server:** does a customer want it, and on what hardware?
+   (needed for Task 37)
