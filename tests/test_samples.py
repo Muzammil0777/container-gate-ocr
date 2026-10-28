@@ -56,6 +56,14 @@ def test_plate(recognizer, path, plate):
     assert [(p['plate'], p['verified']) for p in plates] == [(plate, True)]
 
 
+def test_door_markings_are_not_plates(recognizer):
+    # 2.5K yard camera: '764 CU.M' and '61490 LBS' (white paint on the door) were read as
+    # plates '764 GLN' and '1499 LBS'; the container itself must still be read
+    out = recognizer(cv2.imread(str(ROOT / 'tests/data/yard_door_weights.jpg')))
+    assert [c['code'] for c in out['codes']] == ['CAAU9873210']
+    assert out['plates'] == []
+
+
 def test_no_verified_plate_on_container_only_images(recognizer):
     for path in EXPECTED:
         if path not in PLATES:

@@ -191,7 +191,7 @@ class Recognizer:
         plates = {}
         for digits, letters, score, (x, y, w, h) in found:
             key = digits + letters
-            if key in plates and plates[key]['score'] >= score:
+            if key in plates and plates[key]['score'] >= score or not _dark_on_light(frame[y:y + h, x:x + w]):
                 continue
             # Arabic row sits directly above the Latin row, same width
             top_y = max(0, y - round(1.15 * h))
@@ -306,6 +306,15 @@ class Recognizer:
 def _is_overlay(text):
     """The camera's own date/time overlay ('10-15-2026 Thu 08:31:40'): never a container."""
     return ':' in text or text.count('-') >= 2 or sum(ch.isdigit() for ch in text) > 8
+
+
+def _dark_on_light(crop):
+    """Saudi plates are dark print on white, so light pixels are most of the Latin row's box
+    (real plates ~0.65). Weight/volume markings painted white on a container door are ~0.2."""
+    if crop.size == 0:
+        return False
+    _, ink = cv2.threshold(cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY), 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    return ink.mean() > 0.5 * 255
 
 
 def _overlaps(a, b):
