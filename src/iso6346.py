@@ -67,11 +67,14 @@ def parse_window(w):
 
 
 def _near(a, b):
-    """Boxes (x, y, w, h) within ~2 character sizes of each other."""
-    size = max(min(a[2], a[3]), min(b[2], b[3]))
+    """Boxes (x, y, w, h) within ~2 character sizes side by side, or on the next line down
+    (a two-line code, gap under one line of the smaller text). Further down is another
+    marking: the door's weight lines joined the owner box as 'CAAU 135965 ?', and a sign's
+    Arabic read as 'ULAU' joined the truck's plate number below it."""
+    small, size = sorted((min(a[2], a[3]), min(b[2], b[3])))
     dx = max(0, b[0] - a[0] - a[2], a[0] - b[0] - b[2])
     dy = max(0, b[1] - a[1] - a[3], a[1] - b[1] - b[3])
-    return dx <= 2 * size and dy <= 2 * size
+    return dx <= 2 * size and dy <= small
 
 
 def find_codes(texts, boxes=None):

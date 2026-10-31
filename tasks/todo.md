@@ -193,8 +193,8 @@ dark-on-light check only stops white paint on dark doors. (3) Night/IR recording
 cameras.
 
 **Acceptance criteria:**
-- [ ] The yard frames give only CAAU 987321 0, no extra codes, still 22/22
-- [ ] A marking on a white container is not a plate; the 3 real plates in images/ still read
+- [x] The yard frames give only CAAU 987321 0, no extra codes, still 22/22
+- [x] A marking on a white container is not a plate; the 3 real plates in images/ still read
 - [ ] Night recording replayed: rows match what a person sees; misses listed in plan.md
 
 **Verification:** tests from small saved crops under `tests/data/` (no full videos); replay with `bench.py`.

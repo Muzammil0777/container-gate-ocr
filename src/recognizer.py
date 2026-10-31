@@ -183,6 +183,9 @@ class Recognizer:
             if ba[0] < bb[0] and abs(ba[1] - bb[1]) < 0.5 * ba[3] and _near(ba, bb) \
                     and 1 <= len(normalize(ta)) <= 4 and len(normalize(tb)) == 3 and (p := parse_latin(ta + tb)):
                 found.append((*p, min(sa, sb), _union([ba, bb])))
+        if found:  # a plate is a small white rectangle; a marking on a white container is not
+            cands = _plate_candidates(frame)
+            found = [f for f in found if any(_inside(f[3], c) for c in cands)]
         if not found and fallback:
             for x, y, w, h in _plate_candidates(frame):
                 text, s = self._rec(self.engine, frame[y + h // 2:y + h, x:x + w])
@@ -319,6 +322,12 @@ def _dark_on_light(crop):
 
 def _overlaps(a, b):
     return a[0] < b[0] + b[2] and b[0] < a[0] + a[2] and a[1] < b[1] + b[3] and b[1] < a[1] + a[3]
+
+
+def _inside(box, outer):
+    """The centre of box lies in outer."""
+    cx, cy = box[0] + box[2] / 2, box[1] + box[3] / 2
+    return outer[0] <= cx <= outer[0] + outer[2] and outer[1] <= cy <= outer[1] + outer[3]
 
 
 def _union(boxes):
