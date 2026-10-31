@@ -171,3 +171,18 @@ def test_a_plate_misread_that_flips_letters_does_not_make_a_second_truck():
                      (1.5, [], [plate(letters='UTR')]), (2, [code('MRSU4425761')], []),
                      (2.5, [code('MRSU4425761')], [])]) + [(9, e) for e in t.flush(9)]
     assert [(e['code'] and e['code']['code'], e['plate']['plate']) for _, e in events] == [('MRSU4425761', '3231 UTA')]
+
+
+def test_lane_row_each_box_on_the_photo_it_was_read_on(tmp_path):
+    import cv2
+    rear, side, front = (np.zeros((100, 200, 3), np.uint8) for _ in range(3))
+    c, p = {**code('MRSU4425761'), 'cam': 'rear'}, {**plate(), 'cam': 'front'}
+    e = {'code': c, 'plate': p, 'frame': rear, 'frame2': side, 'code2': {**c, 'cam': 'side', 'box': (100, 50, 50, 20)},
+         'plate_frame': front, 'cams_agree': 2, 'cams_expected': 2}
+    row = gate(tmp_path).log(e, 'rear', 'Gate 1', 'IN', when=T0, lane='Entry')
+    assert (row['lane'], row['cams_agree'], row['cams_expected'], row['plate_source']) == ('Entry', 2, 2, 'ocr')
+    snap, snap2 = cv2.imread(row['snapshot']), cv2.imread(row['snapshot2'])
+    assert snap[10, 10].max() > 100 and snap[70, 60].max() < 60   # container box, no plate box (another camera's frame)
+    assert snap2[50, 100].max() > 100 and snap2[10, 10].max() < 60  # the side camera's own box
+    one = gate(tmp_path / 'one').log(event(code('MRSU4425761'), plate()), when=T0)  # one camera: both, as before
+    assert cv2.imread(one['snapshot'])[70, 60].max() > 100 and 'lane' not in one

@@ -30,7 +30,7 @@ class _CamGroup(_Group):
 
     def __init__(self, key):
         super().__init__(key)
-        self.by_cam = {}  # camera -> (score, frame)
+        self.by_cam = {}  # camera -> (score, frame, item)
 
     def add(self, item, frame, now, window_s):
         before = self.best
@@ -38,7 +38,7 @@ class _CamGroup(_Group):
         cam = item['cam']
         if cam not in self.by_cam or item['score'] > self.by_cam[cam][0]:
             shared = self.best is not before  # this read is the group's new best: reuse its copy
-            self.by_cam[cam] = (item['score'], self.best[2] if shared else frame.copy())
+            self.by_cam[cam] = (item['score'], self.best[2] if shared else frame.copy(), item)
 
 
 class _Groups:
@@ -103,7 +103,8 @@ class LaneTracker:
       front, the container cameras the rear), and up to `max_wait_s` for the second container
       camera to agree; a second, different confirmed plate means the next truck has arrived
     - one event per truck: code, plate, frame (best container photo), frame2 (the other
-      container camera's photo), plate_frame, cams_agree, cams_expected
+      container camera's photo) and code2 (that camera's read, for its box), plate_frame,
+      cams_agree, cams_expected
     A lane of one camera that reads both behaves exactly like GateTracker. cameras: [(name,
     role)] with role 'container', 'plate' or 'both'. update() may be called from each camera's
     own thread."""
@@ -226,15 +227,16 @@ class LaneTracker:
             self.logged[code[0]['code'][4:10]] = now
         if plate:
             self.logged[plate[0]['digits'] + plate[0]['letters']] = now
-        frame = frame2 = None
+        frame = frame2 = code2 = None
         if code:
             frame = code[1].best[2]
             best_cam = code[1].best[1]['cam']
             others = [sf for cam, sf in getattr(code[1], 'by_cam', {}).items() if cam != best_cam]
-            frame2 = max(others, key=lambda sf: sf[0])[1] if others else None
+            if others:
+                _, frame2, code2 = max(others, key=lambda sf: sf[0])
         return [{'code': code and code[0], 'plate': plate and plate[0],
                  'frame': frame if frame is not None else plate[1].best[2],
-                 'frame2': frame2, 'plate_frame': plate and plate[1].best[2],
+                 'frame2': frame2, 'code2': code2, 'plate_frame': plate and plate[1].best[2],
                  'cams_agree': self._agree(code) if code else None, 'cams_expected': self.cams_expected}]
 
 
@@ -275,9 +277,10 @@ class GateLog:
         self.lang, self.dedupe_s = language, dedupe_s
         self.dirty, self.lock = set(), threading.Lock()  # days ('YYYY-MM-DD') whose Excel is stale
 
-    def log(self, event, camera='camera', location='', direction='', when=None):
+    def log(self, event, camera='camera', location='', direction='', when=None, lane=None):
         """Save the snapshots and store one row. Returns the row dict, with 'status'
-        ('added', 'merged' or 'duplicate') and 'id'."""
+        ('added', 'merged' or 'duplicate') and 'id'. lane: the lane's name, for a camera in a
+        lane (adds the lane columns and the second container camera's photo)."""
         when = when or datetime.now()
         code, plate = event['code'], event['plate']
         day_dir = self.snapshot_dir / when.strftime('%Y-%m-%d')
@@ -286,7 +289,13 @@ class GateLog:
                                     plate and plate['digits'] + plate['letters']) if x)
         stem = f"{when:%H%M%S}_{_safe(camera)}_{name}"
         snap = day_dir / f"{stem}.jpg"
-        cv2.imwrite(str(snap), draw(event['frame'].copy(), [code] if code else [], [plate] if plate else []))
+        # each box on the photo it was read on: in a lane the plate often comes from another camera
+        same_cam = plate and (not code or plate.get('cam') == code.get('cam'))
+        cv2.imwrite(str(snap), draw(event['frame'].copy(), [code] if code else [], [plate] if same_cam else []))
+        snap2 = None
+        if event.get('frame2') is not None:
+            snap2 = day_dir / f"{stem}_2.jpg"
+            cv2.imwrite(str(snap2), draw(event['frame2'].copy(), [{**code, 'box': event['code2']['box']}]))
         plate_img = ''
         if plate:
             x, y, w, h = plate['box']
@@ -308,6 +317,9 @@ class GateLog:
             'confidence': round(min(x['score'] for x in (code, plate) if x), 3),
             'snapshot': str(snap.resolve()), 'plate_image': plate_img or None,
         }
+        if lane:
+            row.update(lane=lane, cams_agree=event.get('cams_agree'), cams_expected=event.get('cams_expected'),
+                       plate_source=plate and 'ocr', snapshot2=snap2 and str(snap2.resolve()))
         row['status'], row['id'] = self.store.add(row, self.dedupe_s)
         if row['status'] != 'added':  # the earlier row keeps its photos; drop the unused new ones
             kept = self.store.get(row['id'])
