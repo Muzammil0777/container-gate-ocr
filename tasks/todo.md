@@ -184,7 +184,7 @@ format) with its plate photo, and feeds the lane. Reconnects like video streams 
 **Verification:** tests on the fixtures; manual run against the real camera.
 **Dependencies:** Tasks 2, 6. **Files:** `src/anpr.py`, `cctv.py`, `tests/test_anpr.py`. **Scope:** M
 
-### Task 36: Accuracy on real yard footage
+### Task 36: Accuracy on real yard footage (yard parts ✅, night recordings still open)
 **Description:** Fix what the 2.5K yard recording showed (2026-10-28) and test at night.
 (1) Junk container codes next to the real one ('CAAU 250015 ?', 'DLAU161707?' from the door
 markings), which once opened a junk row: find which pass makes them (zoom, vertical, stitched

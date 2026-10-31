@@ -245,13 +245,13 @@ Task numbers stay as first planned.
 ### Phase 2: Detection service
 - [x] Task 6: Service runs cameras by lane, one row per truck with every camera's photo (real-recording check open)
 - [ ] Task 7: Hikvision ANPR events as the plate source (if Task 2 succeeds)
-- [ ] Task 36: Accuracy on real yard footage: junk container codes, white-container markings, night
+- [ ] Task 36: Accuracy on real yard footage: junk container codes, white-container markings, night (yard parts done; night open)
 
 ### Checkpoint: End to end with real recordings
 
 ### Phase 3: App
 - [x] Task 8: Cameras page: lanes and what each camera reads; Live grouped by lane
-- [ ] Task 9: Records and Excel: "Verified by 2 cameras", every camera's photo
+- [x] Task 9: Records and Excel: "Verified by 2 cameras", every camera's photo
 - [ ] Task 10: Setup wizard: second container camera and plate camera
 
 ### Checkpoint: Lanes complete
