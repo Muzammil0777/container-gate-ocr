@@ -261,6 +261,36 @@ TEXT = {
                      'الكاميرا "{camera}" مضبوطة على المسار "{lane}" غير الموجود. تعمل وحدها الآن.'),
     'bad_role': ('Camera "{camera}" has an unknown setting for what it reads, so it is not used.',
                  'إعداد ما تقرأه الكاميرا "{camera}" غير معروف، لذلك لا يتم استخدامها.'),
+    'lanes': ('Lanes', 'المسارات'),
+    'lanes_help': ('Put the cameras that see the same truck in one lane, and each truck is logged once, '
+                   'checked by every camera.',
+                   'ضع الكاميرات التي ترى الشاحنة نفسها في مسار واحد، فتُسجَّل كل شاحنة مرة واحدة وتتحقق منها كل الكاميرات.'),
+    'help_lane': ('A lane is one way through the gate, for example "Entry". It can have two cameras on the container '
+                  '(from different sides) and one on the number plate. Without lanes, each camera logs trucks on its own.',
+                  'المسار هو ممر واحد عبر البوابة، مثل "الدخول". يمكن أن يكون فيه كاميرتان على الحاوية (من جهتين مختلفتين) '
+                  'وكاميرا على لوحة السيارة. بدون مسارات، تسجل كل كاميرا الشاحنات وحدها.'),
+    'no_lanes': ('No lanes. Each camera works on its own.', 'لا توجد مسارات. تعمل كل كاميرا وحدها.'),
+    'add_lane_btn': ('Add a lane', 'إضافة مسار'),
+    'lane_name': ('Lane name', 'اسم المسار'),
+    'lane_direction_help': ('Do trucks come in or go out through this lane?', 'هل تدخل الشاحنات أم تخرج عبر هذا المسار؟'),
+    'save_lane': ('Save lane', 'حفظ المسار'),
+    'lane_cameras': ('Cameras: {n}', 'الكاميرات: {n}'),
+    'lane_delete_confirm': ('Delete lane "{name}"? Its cameras stay, and each works on its own again.',
+                            'حذف المسار "{name}"؟ تبقى كاميراته، وتعمل كل منها وحدها من جديد.'),
+    'lane': ('Lane', 'المسار'),
+    'lane_none': ('No lane (works on its own)', 'بدون مسار (تعمل وحدها)'),
+    'lane_pick_help': ('Which lane does this camera watch?', 'أي مسار تراقبه هذه الكاميرا؟'),
+    'lane_gone': ('This lane was deleted. Choose another lane.', 'تم حذف هذا المسار. اختر مساراً آخر.'),
+    'role': ('What does this camera read?', 'ماذا تقرأ هذه الكاميرا؟'),
+    'role_help': ('Container: it sees the container number. Plate: it sees the number plate. Both: it sees both.',
+                  'الحاوية: ترى رقم الحاوية. اللوحة: ترى لوحة السيارة. كلاهما: ترى الاثنين.'),
+    'help_role': ('When two cameras read the same container number, the truck is marked "Verified by 2 cameras". '
+                  'The plate camera only needs a clear view of the number plate.',
+                  'عندما تقرأ كاميرتان رقم الحاوية نفسه، تُعلَّم الشاحنة "تم التحقق بكاميرتين". '
+                  'تحتاج كاميرا اللوحة فقط إلى رؤية واضحة للوحة السيارة.'),
+    'role_container': ('Container', 'الحاوية'),
+    'role_plate': ('Plate', 'اللوحة'),
+    'role_both': ('Both', 'كلاهما'),
     # Web app: site login
     'sign_in': ('Sign in', 'تسجيل الدخول'),
     'sign_in_help': ('Enter the site password to open the gate app.', 'أدخل كلمة مرور الموقع لفتح تطبيق البوابة.'),

@@ -38,6 +38,7 @@ from src.camera import hikvision_url, port_open, redact
 from src.gate import GateLog, GateTracker
 from src.i18n import LANGUAGES, TEXT
 from src.iso6346 import format_code
+from src.lanes import lane_problems
 from src.recognizer import Recognizer, draw
 from src.store import LINKS, Store, needs_review, parse_fix, to_excel, to_zip
 
@@ -194,14 +195,16 @@ def status():
     """Detection service and camera states for the Live page. A camera's state is 'ok',
     'connecting', 'offline' (no picture for `age` s; age None if never) or 'stopped'."""
     running, cams = config.service_status()
-    now, out = time.time(), []
+    now, out, cfg = time.time(), [], config.load_config()
     for cam in _enabled_cameras():
         s = cams.get(cam['name'])
         age = int(now - s['last_frame_at']) if s and s.get('last_frame_at') else None
         state = ('stopped' if not running else 'connecting' if not s
                  else 'offline' if age is None or age > OFFLINE_S else 'ok')
-        out.append({'name': cam['name'], 'direction': cam.get('direction', 'IN'), 'location': cam.get('location', ''),
-                    'state': state, 'age': age,
+        lane = _lane(cfg, cam.get('lane')) or {}   # a camera in a lane has the lane's direction and location
+        out.append({'name': cam['name'], 'direction': lane.get('direction') or cam.get('direction', 'IN'),
+                    'location': lane.get('location', cam.get('location', '')), 'lane': lane.get('name'),
+                    'role': cam.get('role', 'both'), 'state': state, 'age': age,
                     'has_picture': running and (config.LIVE / f"{_safe(cam['name'])}.jpg").is_file()})
     return {'running': running, 'starting': not running and time.time() - _started_at < STARTING_S,
             'today': date.today().isoformat(), 'cameras': out}
@@ -236,12 +239,15 @@ class Settings(BaseModel):
 
 @app.get('/api/settings')
 def get_settings():
-    """NVR login (never the password, only whether one is saved), Excel language and cameras."""
+    """NVR login (never the password, only whether one is saved), Excel language, cameras, lanes,
+    and lane setups that won't work as meant (`problems`: text key and values)."""
     cfg = config.load_config()
     nvr = cfg.get('nvr', {})
     return {'nvr': {'ip': nvr.get('ip', ''), 'user': nvr.get('user', 'admin'), 'port': nvr.get('port', 554),
                     'has_password': bool(nvr.get('password'))},
-            'language': cfg.get('language', 'en'), 'cameras': [_safe_camera(c) for c in cfg.get('cameras', [])]}
+            'language': cfg.get('language', 'en'), 'cameras': [_safe_camera(c) for c in cfg.get('cameras', [])],
+            'lanes': cfg.get('lanes', []),
+            'problems': [{'key': k, 'values': v} for k, v in lane_problems(cfg)]}
 
 
 def _safe_camera(cam):
@@ -273,15 +279,42 @@ def _camera(cfg, name):
     return cam
 
 
-class CameraSwitch(BaseModel):
-    enabled: bool
+def _lane(cfg, name):
+    return next((ln for ln in cfg.get('lanes', []) if name and ln.get('name') == name), None)
+
+
+Role = Literal['container', 'plate', 'both']
+
+
+def _set_lane(cfg, cam, lane, role):
+    """Put a camera in a lane with its role, or ('' / None) let it work alone again, reading both."""
+    if not lane:
+        cam.pop('lane', None)
+        cam.pop('role', None)
+    elif not _lane(cfg, lane):
+        raise HTTPException(422, {'errors': ['lane_gone']})
+    else:
+        cam.update(lane=lane, role=role or cam.get('role', 'both'))
+
+
+class CameraChange(BaseModel):
+    enabled: bool | None = None
+    lane: str | None = None  # '': no lane
+    role: Role | None = None
 
 
 @app.patch('/api/cameras/{name}')
-def switch_camera(name: str, change: CameraSwitch):
-    """Switch a camera on or off; the detection service follows within a few seconds."""
+def change_camera(name: str, change: CameraChange):
+    """Switch a camera on or off, or move it to a lane / change what it reads; the detection
+    service follows within a few seconds."""
     cfg = config.load_config()
-    _camera(cfg, name)['enabled'] = change.enabled
+    cam = _camera(cfg, name)
+    if change.enabled is not None:
+        cam['enabled'] = change.enabled
+    if change.lane is not None:
+        _set_lane(cfg, cam, change.lane, change.role)
+    elif change.role and cam.get('lane'):
+        cam['role'] = change.role
     config.save_config(cfg)
     return get_settings()
 
@@ -301,6 +334,8 @@ class NewCamera(BaseModel):
     direction: Literal['IN', 'OUT'] = 'IN'
     location: str = ''
     roi: list[float] | None = None  # reading area [left, top, right, bottom], fractions of the picture
+    lane: str | None = None         # none: the camera works alone and reads both
+    role: Role = 'both'
 
 
 def _check_roi(roi):
@@ -318,10 +353,44 @@ def add_camera(cam: NewCamera):
     if cam.roi:
         new['roi'] = [round(v, 3) for v in cam.roi]
     cfg = config.load_config()
+    _set_lane(cfg, new, cam.lane, cam.role)
     cams = cfg.setdefault('cameras', [])
     i = next((i for i, c in enumerate(cams) if c['name'] == cam.name), len(cams))
     cams[i:i + 1] = [new]
     cfg.setdefault('autostart', True)
+    config.save_config(cfg)
+    return get_settings()
+
+
+class NewLane(BaseModel):
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)]
+    direction: Literal['IN', 'OUT'] = 'IN'
+    location: str = ''
+
+
+@app.post('/api/lanes')
+def add_lane(lane: NewLane):
+    """Add a lane (the cameras that see the same truck), or replace the one with the same name."""
+    cfg = config.load_config()
+    lanes = cfg.setdefault('lanes', [])
+    new = {'name': lane.name, 'direction': lane.direction, 'location': lane.location.strip()}
+    i = next((i for i, ln in enumerate(lanes) if ln.get('name') == lane.name), len(lanes))
+    lanes[i:i + 1] = [new]
+    config.save_config(cfg)
+    return get_settings()
+
+
+@app.delete('/api/lanes/{name}')
+def delete_lane(name: str):
+    """Remove a lane. Its cameras stay and each works alone again, as before lanes."""
+    cfg = config.load_config()
+    lane = _lane(cfg, name)
+    if lane is None:
+        raise HTTPException(404)
+    cfg['lanes'].remove(lane)
+    for cam in cfg.get('cameras', []):
+        if cam.get('lane') == name:
+            _set_lane(cfg, cam, None, None)
     config.save_config(cfg)
     return get_settings()
 

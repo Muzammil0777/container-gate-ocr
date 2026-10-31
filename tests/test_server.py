@@ -214,6 +214,39 @@ def test_add_camera(site):
         assert client.post('/api/cameras', json=bad).status_code == 422, bad
 
 
+def test_three_camera_lane_set_up_through_the_api(site):
+    assert client.get('/api/settings').json()['lanes'] == []                   # old setups: no lanes, no problems
+    assert client.get('/api/settings').json()['problems'] == []
+    r = client.post('/api/lanes', json={'name': ' Entry ', 'direction': 'OUT', 'location': 'Main gate'})
+    assert r.json()['lanes'] == [{'name': 'Entry', 'direction': 'OUT', 'location': 'Main gate'}]
+    client.post('/api/cameras', json={'name': 'Rear left', 'channel': 1, 'lane': 'Entry', 'role': 'container'})
+    r = client.post('/api/cameras', json={'name': 'Rear right', 'channel': 2, 'lane': 'Entry', 'role': 'container'})
+    assert r.json()['problems'] == [{'key': 'lane_no_plate_camera', 'values': {'lane': 'Entry'}}]
+    r = client.patch('/api/cameras/Gate 1', json={'lane': 'Entry', 'role': 'plate'})   # an existing camera joins
+    assert r.json()['problems'] == []
+    cams = {c['name']: c for c in config.load_config()['cameras']}
+    assert (cams['Gate 1']['lane'], cams['Gate 1']['role'], cams['Rear left']['role']) == ('Entry', 'plate', 'container')
+    status = {c['name']: c for c in client.get('/api/status').json()['cameras']}
+    assert (status['Rear left']['lane'], status['Rear left']['direction'], status['Rear left']['location']) == \
+           ('Entry', 'OUT', 'Main gate')
+    assert (status['Gate 2']['lane'], status['Gate 2']['role']) == (None, 'both')       # alone, as before
+
+    client.patch('/api/cameras/Rear left', json={'role': 'both'})
+    assert config.load_config()['cameras'][3]['role'] == 'both'
+    client.patch('/api/cameras/Gate 2', json={'role': 'plate'})                 # not in a lane: stays 'both'
+    assert 'role' not in config.load_config()['cameras'][1]
+    client.patch('/api/cameras/Gate 1', json={'lane': ''})                      # leaves the lane
+    assert 'lane' not in config.load_config()['cameras'][0] and 'role' not in config.load_config()['cameras'][0]
+
+    assert client.post('/api/cameras', json={'name': 'X', 'channel': 1, 'lane': 'Nope'}).json()['detail'] == \
+           {'errors': ['lane_gone']}
+    assert client.post('/api/cameras', json={'name': 'X', 'channel': 1, 'lane': 'Entry', 'role': 'side'}).status_code == 422
+    assert client.post('/api/lanes', json={'name': ' '}).status_code == 422
+    assert client.delete('/api/lanes/Entry').json()['lanes'] == []
+    assert all('lane' not in c for c in config.load_config()['cameras'])        # cameras work alone again
+    assert client.delete('/api/lanes/Entry').status_code == 404
+
+
 def test_camera_frame_problems(site, monkeypatch):
     errors = lambda r: r.json()['detail']['errors']  # noqa: E731
     assert errors(client.post('/api/cameras/frame', json={'channel': 1})) == ['no_nvr']

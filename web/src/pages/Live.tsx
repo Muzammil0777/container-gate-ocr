@@ -8,10 +8,20 @@ import DayStats from '../components/DayStats'
 import TruckTable, { Direction } from '../components/TruckTable'
 
 type CameraState = {
-  name: string; direction: string; location: string
+  name: string; direction: string; location: string; lane: string | null; role: 'container' | 'plate' | 'both'
   state: 'ok' | 'connecting' | 'offline' | 'stopped'; age: number | null; has_picture: boolean
 }
 type Status = { running: boolean; starting: boolean; today: string; cameras: CameraState[] }
+
+/** Cameras grouped by lane, lanes in the order of their first camera; cameras without a lane
+ *  together at the end (lane null), as before lanes. */
+function lanes(cams: CameraState[]): [string | null, CameraState[]][] {
+  const groups = new Map<string | null, CameraState[]>()
+  for (const c of [...cams.filter((c) => c.lane), ...cams.filter((c) => !c.lane)]) {
+    groups.set(c.lane, [...(groups.get(c.lane) ?? []), c])
+  }
+  return [...groups]
+}
 
 export default function Live() {
   const t = useT()
@@ -54,11 +64,20 @@ export default function Live() {
         </Alert>
       )}
 
-      {s.cameras.length > 0 && (
-        <SimpleGrid cols={{ base: 1, md: s.cameras.length > 1 ? 2 : 1 }} maw={s.cameras.length > 1 ? undefined : 900}>
-          {s.cameras.map((c) => <CameraCard key={c.name} cam={c} at={status.at} />)}
-        </SimpleGrid>
-      )}
+      {lanes(s.cameras).map(([lane, cams]) => (
+        <Stack key={lane ?? ''} gap="sm">
+          {lane && (
+            <Group gap="xs">
+              <Title order={3}>{lane}</Title>
+              <Direction value={cams[0].direction} />
+              {cams[0].location && <Text c="dimmed">{cams[0].location}</Text>}
+            </Group>
+          )}
+          <SimpleGrid cols={{ base: 1, md: cams.length > 1 ? 2 : 1 }} maw={cams.length > 1 ? undefined : 900}>
+            {cams.map((c) => <CameraCard key={c.name} cam={c} at={status.at} />)}
+          </SimpleGrid>
+        </Stack>
+      ))}
 
       <Stack gap="md">
         <Group justify="space-between">
@@ -112,9 +131,9 @@ function CameraCard({ cam, at }: { cam: CameraState; at: number }) {
         <Stack gap={4}>
           <Group gap="xs">
             <Text fw={700} size="lg">{cam.name}</Text>
-            <Direction value={cam.direction} />
+            {cam.lane ? <Badge variant="light">{t(`role_${cam.role}`)}</Badge> : <Direction value={cam.direction} />}
           </Group>
-          {cam.location && <Text size="sm" c="dimmed">{cam.location}</Text>}
+          {cam.location && !cam.lane && <Text size="sm" c="dimmed">{cam.location}</Text>}
           {cam.state === 'offline' && <Text size="sm" c="red">{t('cam_offline_help')}</Text>}
         </Stack>
         <Badge size="lg" color={STATE_COLOR[cam.state]} variant={cam.state === 'ok' ? 'filled' : 'light'} style={{ flexShrink: 0 }}>
