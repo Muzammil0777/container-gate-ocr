@@ -643,7 +643,7 @@ def video_frame(job_id: str):
 
 
 @app.get('/api/video/{job_id}/records/{rid}/{kind}')
-def video_photo(job_id: str, rid: int, kind: Literal['snapshot', 'plate_image']):
+def video_photo(job_id: str, rid: int, kind: Literal['snapshot', 'plate_image', 'snapshot2']):
     return record_photo(rid, kind, _job(job_id).store)
 
 
@@ -665,9 +665,9 @@ def records(day: date, store: Store = Depends(get_store)):
 
 
 @app.get('/api/records/{rid}/{kind}')
-def record_photo(rid: int, kind: Literal['snapshot', 'plate_image'], store: Store = Depends(get_store)):
-    """A truck's snapshot or plate close-up. Looked up by record id, so only photos that
-    belong to a record can be fetched."""
+def record_photo(rid: int, kind: Literal['snapshot', 'plate_image', 'snapshot2'], store: Store = Depends(get_store)):
+    """A truck's snapshot, second container camera's photo or plate close-up. Looked up by
+    record id, so only photos that belong to a record can be fetched."""
     row = store.get(rid)
     path = row and row.get(kind)
     if not path or not Path(path).is_file():

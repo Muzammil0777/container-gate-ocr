@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
 
 import server
 from server import COOKIE, app, get_store
@@ -100,6 +101,24 @@ def test_records_hide_photo_paths(site):
     assert row['needs_review'] is True                                          # no container
     assert client.get('/api/records?day=2026-10-18').json() == []
     assert client.get('/api/records?day=yesterday').status_code == 422
+
+
+def test_every_photo_by_record_id(site):
+    tmp_path, store = site
+    for name in ('a', 'b', 'p'):
+        (tmp_path / f'{name}.jpg').write_bytes(name.encode())
+    _, rid = store.add({'date': '2026-10-17', 'time': '09:00:00', 'direction': 'IN', 'container': 'MRSU7869395',
+                        'cams_agree': 2, 'cams_expected': 2, 'snapshot': str(tmp_path / 'a.jpg'),
+                        'snapshot2': str(tmp_path / 'b.jpg'), 'plate_image': str(tmp_path / 'p.jpg')})
+    for kind, body in (('snapshot', b'a'), ('snapshot2', b'b'), ('plate_image', b'p')):
+        assert client.get(f'/api/records/{rid}/{kind}').content == body
+    assert client.get(f'/api/records/{rid}/lane').status_code == 422           # only photo columns
+    assert client.get(f'/api/records/{rid + 1}/snapshot2').status_code == 404
+    names = zipfile.ZipFile(io.BytesIO(client.get('/api/zip/day/2026-10-17').content)).namelist()
+    assert sorted(names) == ['gate_log_2026-10-17.xlsx', 'photos/a.jpg', 'photos/b.jpg', 'photos/p.jpg']
+    ws = load_workbook(io.BytesIO(client.get('/api/excel/day/2026-10-17').content)).active
+    links = {c.hyperlink.target for row in ws.iter_rows() for c in row if c.hyperlink}
+    assert links == {str(tmp_path / f'{n}.jpg') for n in 'abp'}
 
 
 def test_excel_day(site):
