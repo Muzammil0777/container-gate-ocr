@@ -4,7 +4,7 @@ import {
 } from '@mantine/core'
 import { IconAlertTriangle, IconPhoto, IconScan } from '@tabler/icons-react'
 import { ApiError, cameraPicture, send, useT } from '../api'
-import type { Settings } from '../pages/Cameras'
+import { LaneSelect, type Role, RoleControl, type Settings } from '../pages/Cameras'
 import AreaPicker from './AreaPicker'
 import HelpTip from './HelpTip'
 import OcrResultView, { type OcrResult } from './OcrResult'
@@ -20,6 +20,8 @@ export default function AddCamera({ settings, onSaved, onCancel, initial }: {
   const [channel, setChannel] = useState<number | string>(initial?.channel ?? 1)
   const [direction, setDirection] = useState<'IN' | 'OUT'>('IN')
   const [location, setLocation] = useState('')
+  const [lane, setLane] = useState('')
+  const [role, setRole] = useState<Role>('both')
   const [roi, setRoi] = useState<number[] | null>(null)
   const [picture, setPicture] = useState(initial?.picture)
   const [result, setResult] = useState<OcrResult>()
@@ -42,7 +44,7 @@ export default function AddCamera({ settings, onSaved, onCancel, initial }: {
     setResult(await send<OcrResult>('POST', '/api/cameras/test', { channel: Number(channel), roi }))
   })
   const save = () => run('save', async () => {
-    const body = { name, channel: Number(channel), direction, location, roi }
+    const body = { name, channel: Number(channel), direction, location, roi, lane: lane || null, role }
     onSaved(await send<Settings>('POST', '/api/cameras', body), name.trim())
   })
 
@@ -57,14 +59,19 @@ export default function AddCamera({ settings, onSaved, onCancel, initial }: {
             <NumberInput label={t('nvr_channel')} description={t('channel_help')} value={channel}
                          onChange={(v) => { setChannel(v); setPicture(undefined); setResult(undefined) }}
                          min={1} max={64} size="md" allowDecimal={false} />
-            <div>
-              <Text size="sm" fw={500}>{t('direction')}</Text>
-              <Text size="xs" c="dimmed" mb={6}>{t('direction_help')}</Text>
-              <SegmentedControl value={direction} onChange={(v) => setDirection(v as 'IN' | 'OUT')}
-                                data={[{ value: 'IN', label: t('IN') }, { value: 'OUT', label: t('OUT') }]} />
-            </div>
-            <TextInput label={t('location')} placeholder="Main gate, Lane 1" value={location} size="md"
-                       onChange={(e) => setLocation(e.currentTarget.value)} />
+            {settings.lanes.length > 0 && <LaneSelect lanes={settings.lanes} value={lane} onChange={setLane} size="md" />}
+            {lane ? <RoleControl value={role} onChange={setRole} /> : (  // in a lane: the lane has direction and location
+              <>
+                <div>
+                  <Text size="sm" fw={500}>{t('direction')}</Text>
+                  <Text size="xs" c="dimmed" mb={6}>{t('direction_help')}</Text>
+                  <SegmentedControl value={direction} onChange={(v) => setDirection(v as 'IN' | 'OUT')}
+                                    data={[{ value: 'IN', label: t('IN') }, { value: 'OUT', label: t('OUT') }]} />
+                </div>
+                <TextInput label={t('location')} placeholder="Main gate, Lane 1" value={location} size="md"
+                           onChange={(e) => setLocation(e.currentTarget.value)} />
+              </>
+            )}
           </SimpleGrid>
 
           <Stack gap="xs">
