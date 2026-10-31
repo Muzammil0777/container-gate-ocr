@@ -159,11 +159,11 @@ own tracker; the lane logs one row with every camera's photo. Live status per ca
 unchanged. Reloading settings restarts only the lanes that changed.
 
 **Acceptance criteria:**
-- [ ] Two synthetic videos of the same truck from two angles (one with a hidden digit) give
+- [x] Two synthetic videos of the same truck from two angles (one with a hidden digit) give
       one row, verified by 2 cameras
-- [ ] A single-camera site gives exactly the rows it gives today (`tests/test_live.py`)
+- [x] A single-camera site gives exactly the rows it gives today (`tests/test_live.py`)
 
-- [ ] Snapshots: the container box drawn on the container photo, the plate box on the plate
+- [x] Snapshots: the container box drawn on the container photo, the plate box on the plate
       photo (today both are drawn on one frame; with lanes they come from different cameras)
 - [ ] Pairing across trucks (from the review): a truck without a container followed by one
       whose plate wasn't read, and a next plate confirmed while the rear camera still reads the

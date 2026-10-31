@@ -23,7 +23,8 @@ from src.camera import camera_source, hikvision_url, open_capture, port_open, re
 
 import cv2
 
-from src.gate import GateLog, GateTracker
+from src.gate import GateLog, LaneTracker
+from src.lanes import lanes
 from src.recognizer import Recognizer, draw
 from src.scanner import Scanner
 from src.store import Store
@@ -75,15 +76,57 @@ class LatestFrame:
         return frame
 
 
-def watch(cam, cfg, recognizer, ocr_lock, log, previews, stop, status=None):
-    """Run one camera until `stop` is set (or a video file ends). `status` (a dict) is kept
-    up to date with last_frame_at / last_ocr_ms / connected for the app."""
+class Lane:
+    """A gate lane while it runs: its cameras' threads feed one LaneTracker, which logs one row
+    per truck with every camera's photo. A camera without a lane is a lane of its own."""
+
+    def __init__(self, ln, cfg, log):
+        self.cams = ln['cameras']
+        self.tracker = LaneTracker([(c['name'], c['role']) for c in self.cams], cfg['min_hits'], cfg['window_s'],
+                                   cfg['cooldown_s'], cfg['accept_unverified'], cfg['gap_s'], cfg['max_wait_s'])
+        self.log, self.location, self.direction = log, ln.get('location', ''), ln.get('direction', '')
+        # a lane from the settings' "lanes" (its row says so); a camera on its own logs rows as before
+        self.name = ln['name'] if self.cams[0].get('lane') == ln['name'] else None
+        self.lock, self.running = threading.Lock(), len(self.cams)
+
+    def update(self, camera, codes, frame, now, plates=()):
+        self._log(self.tracker.update(camera, codes, frame, now, plates))
+
+    def done(self):
+        """A camera thread ended; the last one writes the visit in progress."""
+        with self.lock:
+            self.running -= 1
+            last = self.running == 0
+        if last:
+            self._log(self.tracker.flush())
+
+    def _log(self, events):
+        for e in events:
+            camera = (e['code'] or e['plate'])['cam']   # the camera of the row's main photo
+            row = self.log.log(e, camera, self.location, self.direction, lane=self.name)
+            note = {'merged': '  (added to the earlier row)', 'duplicate': '  (duplicate, not added)'}.get(row['status'], '')
+            print(f"[cctv] {row['date']} {row['time']}  {row['direction'] or '':<4} plate {row['plate'] or '-':<9} "
+                  f"container {row['container'] or '-':<14}  {camera} / {self.location}{note}")
+
+
+def one_lane(cam):
+    """A camera on its own (a --source run, or tests) as the lane lanes() would make of it."""
+    return {'name': cam['name'], 'direction': cam.get('direction', ''), 'location': cam.get('location', ''),
+            'cameras': [{**cam, 'role': 'both'}], 'cams_expected': 1}
+
+
+def watch(cam, cfg, recognizer, ocr_lock, lane, previews, stop, status=None):
+    """Run one camera of `lane` until `stop` is set (or a video file ends). `status` (a dict) is
+    kept up to date with last_frame_at / last_ocr_ms / connected for the app."""
+    try:
+        _watch(cam, cfg, recognizer, ocr_lock, lane, previews, stop, {} if status is None else status)
+    finally:
+        lane.done()
+
+
+def _watch(cam, cfg, recognizer, ocr_lock, lane, previews, stop, status):
     name = cam['name']
-    status = status if status is not None else {}
     source = camera_source(cam, cfg.get('nvr'))
-    tracker = GateTracker(cfg['min_hits'], cfg['window_s'], cfg['cooldown_s'], cfg['accept_unverified'],
-                          cfg['gap_s'], cfg['max_wait_s'])
-    where = (name, cam.get('location', ''), cam.get('direction', ''))
     scanner = Scanner(recognizer)
     roi = cam.get('roi')  # [left, top, right, bottom] as fractions of the frame; None = whole frame
     is_file = isinstance(source, str) and Path(source).is_file()
@@ -92,7 +135,7 @@ def watch(cam, cfg, recognizer, ocr_lock, log, previews, stop, status=None):
         step = max(1, round((cap.get(cv2.CAP_PROP_FPS) or 25) / cfg['fps']))
     else:
         stream = LatestFrame(source, name)
-    print(f"[cctv] {name}: watching {redact(source)} ({cam.get('direction', '')} @ {cam.get('location', '')})")
+    print(f"[cctv] {name}: watching {redact(source)} ({lane.direction} @ {lane.location})")
     live = Path(cfg['live_dir']) / f"{_safe(name)}.jpg"
     live.parent.mkdir(parents=True, exist_ok=True)
     status.update(started_at=time.time(), last_frame_at=0.0, last_ocr_ms=None)
@@ -129,16 +172,15 @@ def watch(cam, cfg, recognizer, ocr_lock, log, previews, stop, status=None):
                               max_side=cam.get('max_side', 1600 if roi else cfg['max_side']))
             status['last_ocr_ms'] = out['ms']
             busy = bool(out['codes'] or out['plates'])
-            _log(tracker.update(out['codes'], frame, now, out['plates']), log, *where)
+            lane.update(name, out['codes'], frame, now, out['plates'])
             shown = draw(frame.copy(), out['codes'], out['plates'])
             _write_live(live, shown, f"{name}  {datetime.now():%H:%M:%S}  OCR {out['ms']} ms")
             if previews is not None:
                 previews[name] = shown
         else:
-            _log(tracker.update([], frame, now), log, *where)  # lets a finished visit end
+            lane.update(name, [], frame, now)  # lets a finished visit end
         if not is_file:
             time.sleep(max(0.0, 1 / cfg['fps'] - (time.time() - t0)))
-    _log(tracker.flush(), log, *where)
     if not is_file:
         stream.stopped = True
     print(f"[cctv] {name}: stopped")
@@ -158,26 +200,19 @@ def _write_live(path, img, caption):
         os.replace(tmp, path)
 
 
-def _log(events, log, camera, location, direction):
-    for e in events:
-        row = log.log(e, camera, location, direction)
-        note = {'merged': '  (added to the earlier row)', 'duplicate': '  (duplicate, not added)'}.get(row['status'], '')
-        print(f"[cctv] {row['date']} {row['time']}  {row['direction'] or '':<4} plate {row['plate'] or '-':<9} "
-              f"container {row['container'] or '-':<14}  {camera} / {location}{note}")
-
-
 def _safe(name):
     return ''.join(c if c.isalnum() or c in '-_' else '_' for c in name)
 
 
 class LiveManager:
-    """Runs cameras in background threads: start/stop single cameras while the process keeps
-    running. Used by the gate service (driven by cameras.json) and by tests."""
+    """Runs lanes (see src/lanes.py), each camera in a background thread: start/stop lanes
+    while the process keeps running. Used by the gate service (driven by cameras.json) and by tests."""
 
     def __init__(self, cfg=None):
         self.cfg = {**DEFAULTS, **(cfg or {})}
-        self.cams = {}    # name -> (thread, stop event, camera entry, effective config)
-        self.status = {}  # name -> live status dict (see watch)
+        # ponytail: keyed by name, so a lane and a lone camera with the same name clash
+        self.lanes = {}   # lane name -> (lane entry, effective config, {camera name: (thread, stop event)})
+        self.status = {}  # camera name -> live status dict (see watch)
         self.ocr_lock, self.recognizer, self.logs = threading.Lock(), None, {}
         self.store = Store(self.cfg['db'])
         threading.Thread(target=self._flusher, daemon=True).start()
@@ -190,29 +225,43 @@ class LiveManager:
         return self.logs[language]
 
     def start(self, cam, nvr=None, language=None):
-        """Start (or restart) one camera. Raises ValueError if its connection details are incomplete."""
+        """Start (or restart) one camera on its own. Raises ValueError if its connection details are incomplete."""
+        self.start_lane(one_lane(cam), nvr, language)
+
+    def start_lane(self, ln, nvr=None, language=None):
+        """Start (or restart) a lane's cameras. Raises ValueError, starting none, if one's
+        connection details are incomplete."""
         cfg = {**self.cfg, 'nvr': nvr or self.cfg.get('nvr'), 'language': language or self.cfg['language']}
-        camera_source(cam, cfg['nvr'])
-        self.stop(cam['name'])
+        for cam in ln['cameras']:
+            camera_source(cam, cfg['nvr'])
+        self.stop(ln['name'])
         if self.recognizer is None:
             self.recognizer = Recognizer(cfg['max_side'], cfg['use_cuda'], vertical_every=3)
-        stop, status = threading.Event(), self.status.setdefault(cam['name'], {})
-        th = threading.Thread(target=watch, daemon=True,
-                              args=(cam, cfg, self.recognizer, self.ocr_lock, self.log_for(cfg['language']),
-                                    None, stop, status))
-        th.start()
-        self.cams[cam['name']] = (th, stop, cam, cfg)
+        lane, threads = Lane(ln, cfg, self.log_for(cfg['language'])), {}
+        for cam in ln['cameras']:
+            stop, status = threading.Event(), self.status.setdefault(cam['name'], {})
+            threads[cam['name']] = (threading.Thread(target=watch, daemon=True, args=(
+                cam, cfg, self.recognizer, self.ocr_lock, lane, None, stop, status)), stop)
+        self.lanes[ln['name']] = (ln, cfg, threads)
+        for th, _ in threads.values():
+            th.start()
 
     def stop(self, name):
-        th, stop, _, _ = self.cams.pop(name, (None, None, None, None))
-        if stop:
+        """Stop a lane (a camera on its own: the camera's name); its visit in progress is logged."""
+        _, _, threads = self.lanes.pop(name, (None, None, {}))
+        for _, stop in threads.values():
             stop.set()
+        for cam, (th, _) in threads.items():
             th.join(timeout=10)
-        self.status.pop(name, None)
-        (Path(self.cfg['live_dir']) / f"{_safe(name)}.jpg").unlink(missing_ok=True)
+            self.status.pop(cam, None)
+            (Path(self.cfg['live_dir']) / f"{_safe(cam)}.jpg").unlink(missing_ok=True)
+
+    def cameras(self):
+        """(camera entry, its lane entry, thread) for every camera started."""
+        return [(cam, ln, threads[cam['name']][0]) for ln, _, threads in self.lanes.values() for cam in ln['cameras']]
 
     def running(self):
-        return {name: cam for name, (th, _, cam, _) in self.cams.items() if th.is_alive()}
+        return {cam['name']: cam for cam, _, th in self.cameras() if th.is_alive()}
 
     def flush(self):
         for log in list(self.logs.values()):
@@ -239,34 +288,40 @@ def serve(config_path):
     try:
         while True:
             m = path.stat().st_mtime if path.exists() else None
-            if m != mtime:  # (re)load the camera list
+            if m != mtime:  # (re)load the lanes; only the ones that changed restart
                 mtime, new = m, {**DEFAULTS, **_read_json(path)}
-                wanted = {c['name']: c for c in new.get('cameras', []) if c.get('enabled', True) and c.get('name')}
-                for name in list(manager.cams):
-                    th, _, cam, run_cfg = manager.cams[name]
-                    if name not in wanted or wanted[name] != cam or run_cfg.get('nvr') != new.get('nvr') \
-                            or run_cfg['language'] != new['language']:
-                        manager.stop(name)
-                for name, cam in wanted.items():
-                    if name not in manager.cams:
-                        try:
-                            manager.start(cam, new.get('nvr'), new['language'])
-                        except ValueError as e:
-                            print(f"[cctv] {e}")
+                reload(manager, new)
             if time.time() >= next_status:
                 next_status = time.time() + STATUS_EVERY_S
                 _write_json(status_file, {'pid': os.getpid(), 'updated': time.time(), 'cameras': {
-                    name: {**manager.status.get(name, {}), 'alive': th.is_alive(), 'direction': cam.get('direction'),
-                           'location': cam.get('location'), 'channel': cam.get('channel')}
-                    for name, (th, _, cam, _) in manager.cams.items()}})
+                    cam['name']: {**manager.status.get(cam['name'], {}), 'alive': th.is_alive(),
+                                  'direction': ln['direction'], 'location': ln['location'],
+                                  'channel': cam.get('channel'), 'lane': cam.get('lane'), 'role': cam['role']}
+                    for cam, ln, th in manager.cameras()}})
             time.sleep(0.5)
     except KeyboardInterrupt:
         pass
-    for name in list(manager.cams):
+    for name in list(manager.lanes):
         manager.stop(name)
     manager.flush()
     status_file.unlink(missing_ok=True)
     print('[cctv] gate service stopped')
+
+
+def reload(manager, cfg):
+    """Run the lanes of cfg (settings with defaults): stop the lanes that changed or went,
+    start the new ones; the others keep running."""
+    wanted = {ln['name']: ln for ln in lanes(cfg)}
+    for name in list(manager.lanes):
+        ln, run_cfg, _ = manager.lanes[name]
+        if wanted.get(name) != ln or run_cfg.get('nvr') != cfg.get('nvr') or run_cfg['language'] != cfg['language']:
+            manager.stop(name)
+    for name, ln in wanted.items():
+        if name not in manager.lanes:
+            try:
+                manager.start_lane(ln, cfg.get('nvr'), cfg['language'])
+            except ValueError as e:
+                print(f"[cctv] {e}")
 
 
 def _read_json(path):
@@ -373,7 +428,7 @@ def main():
     previews, stop = ({} if args.show else None), threading.Event()
     th = threading.Thread(target=watch, daemon=True,
                           args=(cam, cfg, Recognizer(cfg['max_side'], cfg['use_cuda'], vertical_every=3), threading.Lock(),
-                                log, previews, stop))
+                                Lane(one_lane(cam), cfg, log), previews, stop))
     th.start()
     print(f"[cctv] logging to {cfg['db']} and {cfg['excel_dir']}  (Ctrl+C to stop)")
     try:
