@@ -17,29 +17,32 @@ Two Claude Code sessions, each in its own Orca worktree, each on its own branch 
 files, so the two never edit the same file in a round:
 
 - **Session A, "App":** `server.py`, `web/src/`, `src/store.py`, `src/i18n.py`, `src/license.py`,
-  `src/config.py`, `src/checkin.py`.
+  `src/config.py`, `src/checkin.py`, `tools/`.
 - **Session B, "Engine and tools":** `cctv.py`, `src/gate.py`, the OCR files (`src/recognizer.py`,
   `src/scanner.py`, `src/iso6346.py`, `src/saudi_plate.py`), `src/lanes.py`, `src/camera.py`,
-  `src/sync.py`, `src/turnaround.py`, `bench.py`, `tools/`, `control/`, `installer/`, `deploy/`,
-  `docs/`, `README.md`, `VERSION`, `CHANGELOG.md`.
-- Exceptions are named in the table (e.g. Task 14 edits `cctv.py`: session B is in `control/` then).
+  `src/turnaround.py`, `bench.py`, `installer/`, `deploy/`, `docs/`, `README.md`, `VERSION`,
+  `CHANGELOG.md`, and the whole Control Center repo (`gate-reader-control`).
+- **Enterprise folders** (`src/enterprise/`, `web/src/enterprise/`): owned task by task, as the table says.
+- Exceptions are named in the table (e.g. Task 14 edits `cctv.py`: session B is in the Control
+  Center repo then).
 
 | Round | Session A (App) | Session B (Engine and tools) | Needs from you |
 |---|---|---|---|
 | 1 | Task 8: Cameras page, lanes | Task 6: service runs cameras by lane | |
 | 2 | Task 9: Records, verified badge, photos | Task 36: accuracy (yard parts; night when recordings come) | |
-| 3 | Task 10: wizard, then Task 13: activation screen (test key pair) | Task 12: license tool | |
+| 3 | Task 10: wizard, then Task 13: activation screen (test key pair) | Task 12: license tool (creates the Control Center repo) | a private GitHub repo |
 | 4 | Task 20, then 21: users, login by username | Task 15: Control Center server | |
 | 5 | Task 22, then 23: Users page, who fixed it | Task 40: Control Center pages | |
 | 6 | Task 14 (also `cctv.py`), then 24: grace stop, license limits | Task 41, then 42: alerts, versions | |
-| 7 | Task 25, then 16: License card usage, heartbeat | Task 17: Control Center online (final check after Task 16 merges) | a Saudi VPS and a domain |
+| 7 | Task 25 (its tool options are in the Control Center repo), then 16: License card usage, heartbeat | Task 17: Control Center online (final check after Task 16 merges) | a Saudi VPS and a domain |
 | 8 | Task 39: import old Excel logs | Task 33, then 35, then 19: installer, customer docs, README | code-signing certificate |
 | - | Task 18: security review of the merged code (either session, fixes split by file) | | |
-| 9 | Task 26, then 27: `updated_at`, HQ receive API | Task 45: turnaround time | |
-| 10 | Task 29: HQ mode pages (tested with rows sent through Task 27's API) | Task 28: site sync worker | |
-| 11 | Task 30, then 31: Connect to HQ, site-scoped users | Task 7 (ANPR), Task 37 (option 2) or Task 34, whichever is ready | ANPR camera / an option 2 customer |
-| 12 | Task 43, then 44: manager roles, Site dashboard | Task 32: HQ deploy files and runbook | a VPS for a test HQ |
-| 13 | Task 46: HQ dashboard | Task 32: deploy and restore test | |
+| 9 | Task 26, then 43: `updated_at` and the Enterprise hooks, Site manager role | Task 45: turnaround time | |
+| 10 | Task 44: Site manager dashboard | Task 27: HQ receive API (`src/enterprise/`) | |
+| 11 | Task 29: HQ mode pages (tested with rows sent through Task 27's API) | Task 28: site sync worker | |
+| 12 | Task 31: HQ manager role and site scope | Task 30: Connect to HQ | |
+| 13 | Task 46: HQ manager dashboard | Task 32: deploy HQ and restore test | a VPS for a test HQ |
+| 14 | | Task 7 (ANPR), Task 37 (option 2) or Task 34, whichever is ready | ANPR camera / an option 2 customer |
 
 Any time: **Task 2** (ANPR camera test) is yours; Task 7 follows in session B in any round where
 session A isn't in `cctv.py` (not round 6). **Task 38** (option 2 build) touches both
@@ -262,16 +265,20 @@ and the clock guard (latest time seen, kept in the database).
 **Dependencies:** None (can start in parallel with Phase 1). **Files:** `src/license.py`, `src/store.py` (meta table), `tests/test_license.py`, `requirements.txt`. **Scope:** M
 
 ### Task 12: Your license tool
-**Description:** `tools/license_tool.py`: `keygen` (once; private key saved outside the repo),
+**Description:** Creates the Control Center repo (`gate-reader-control`), private on GitHub, with its own `CLAUDE.md`.
+`license_tool.py` there: `keygen` (once; private key saved outside the repo),
 `issue --customer --site --machine CODE --days 365 [--cameras N]` prints the key and adds it to
 a local ledger, `inspect KEY` shows what is inside.
 
 **Acceptance criteria:**
-- [ ] Keys it issues are accepted by Task 11; a test fails if a private key file is ever inside the repo
+- [ ] Keys it issues are accepted by Task 11: a sample key made with the test key pair is saved in
+      this repo's `tests/fixtures/license/`, and both repos test against it so the format can't drift
+- [ ] A test fails if a private key file is ever inside either repo
 - [ ] Clear instructions printed for backing up the private key
 
 **Verification:** tests (issue, inspect, round trip); dry run.
-**Dependencies:** Task 11. **Files:** `tools/license_tool.py`, `tests/test_license_tool.py`, `.gitignore`. **Scope:** S
+**Dependencies:** Task 11. **Files:** Control Center repo: `license_tool.py`, `tests/`, `.gitignore`;
+this repo: `tests/fixtures/license/`, `tests/test_license.py`. **Scope:** S
 
 ### Task 13: Activation screen, License card, expiry banners
 **Description:** API: `GET /api/license` (state, end date, days left, machine code),
@@ -366,12 +373,12 @@ plain message; existing users and lanes are never removed by a smaller key.
 **Verification:** tests (test-driven). **Dependencies:** Tasks 12, 22. **Files:** `src/license.py`, `server.py`, `tests/test_license.py`. **Scope:** S
 
 ### Task 25: License tool options, usage on the License card
-**Description:** `tools/license_tool.py --edition --users --lanes`; the License card shows
+**Description:** `license_tool.py --edition --users --lanes` (Control Center repo); the License card shows
 edition, "Users 7 of 10", "Lanes 2 of 2".
 
 **Acceptance criteria:**
 - [ ] A key for 10 users, typed in, raises the limit with no restart
-**Verification:** manual + tests. **Dependencies:** Task 24. **Files:** `tools/license_tool.py`, `web/src/pages/License.tsx`. **Scope:** S
+**Verification:** manual + tests. **Dependencies:** Task 24. **Files:** `web/src/pages/License.tsx`; Control Center repo: `license_tool.py`. **Scope:** S
 
 ### Checkpoint: User packs can be sold
 - [ ] Tests pass; code review; a site upgraded from a real old setup keeps working
@@ -389,6 +396,8 @@ Signed with our code-signing certificate, so Windows trusts it.
 - [ ] Fresh Windows PC with no Python: install, open from a phone on the same Wi-Fi
 - [ ] Windows shows our name as publisher, no "unknown publisher" warning; the certificate's key
       stays outside the repo
+- [ ] A Site installer has no `src/enterprise/`; an Enterprise installer has it (the web bundle's
+      Enterprise pages stay hidden and do nothing without it)
 **Verification:** install on a clean machine or VM. **Dependencies:** a code-signing certificate
 (yours, ~SAR 1,500/year). **Files:** `installer/`. **Scope:** M
 
@@ -418,17 +427,17 @@ a new computer, backing up the private key.
 
 ## Phase 8: Control Center (your dashboard for every client)
 
-A separate app that only you use, hosted once for all clients: clients, contracts, licenses,
+A separate app that only you use, in its own private Control Center repo (`gate-reader-control`), hosted once for all clients: clients, contracts, licenses,
 renewal keys, the health of every deployed site and which version it runs. It replaces the
 plain license server. Design and check-in contract: plan.md, "Control Center".
 
 ### Task 15: Control Center server
-**Description:** `control/` (its own small FastAPI app and SQLite, never shipped to customers):
+**Description:** In the Control Center repo (its own small FastAPI app and SQLite, never shipped to customers):
 clients, sites, deployments (machine code, edition, version), contracts (start, end), licenses
 (every key issued, the ledger) and heartbeats (kept 90 days). `POST /v1/checkin` takes the
 contract in plan.md and answers active / ended plus a newer key when you renewed. Admin login
 with password + authenticator code (TOTP). Signs keys with the same code as
-`tools/license_tool.py` (Task 12); the private key is a secret file on the server, never in the repo.
+`license_tool.py` (Task 12, same repo); the private key is a secret file on the server, never in the repo.
 
 **Acceptance criteria:**
 - [ ] Renew: the next check-in returns the new key; End: the next check-in returns ended
@@ -437,7 +446,7 @@ with password + authenticator code (TOTP). Signs keys with the same code as
 - [ ] A test fails if a private key file is ever inside the repo
 
 **Verification:** tests (test-driven) with FastAPI's test client.
-**Dependencies:** Task 12. **Files:** `control/app.py`, `control/store.py`, `control/tests/`. **Scope:** M
+**Dependencies:** Task 12. **Files:** Control Center repo: `app.py`, `store.py`, `tests/`. **Scope:** M
 
 ### Task 16: App heartbeat and renewals
 **Description:** The web app (`server.py`, which keeps running even when detection is stopped)
@@ -455,7 +464,7 @@ The License card shows the last check-in and a *Check now* button.
 **Dependencies:** Tasks 14, 15. **Files:** `src/checkin.py`, `src/license.py`, `server.py`, `web/src/pages/License.tsx`, `src/i18n.py`. **Scope:** M
 
 ### Task 40: Control Center app (pages)
-**Description:** `control/web` (its own small React app, English only: it is your tool, not the
+**Description:** `web/` in the Control Center repo (its own small React app, English only: it is your tool, not the
 customer's). Pages: **Clients** (sites, edition, users and lanes bought, contract end);
 **Client** (each site's deployments, licenses issued, health over time, notes); **Renewals**
 (contracts ending in 60 / 30 days, *Issue renewal key*: new end date, users, lanes; delivered at
@@ -467,7 +476,7 @@ amber / red: silent, cameras down, disk low, license ending); **Versions** (who 
 - [ ] A site silent for over 2 hours shows red with when it was last seen
 
 **Verification:** browser check against a local Control Center with 3 fake deployments sending heartbeats.
-**Dependencies:** Task 15. **Files:** `control/web/`, `control/app.py`. **Scope:** L
+**Dependencies:** Task 15. **Files:** Control Center repo: `web/`, `app.py`. **Scope:** L
 
 ### Task 41: Alerts to you
 **Description:** Email (SMTP) when: a deployment is silent > 2 h, a camera is offline > 1 h, disk
@@ -476,7 +485,7 @@ reminder a day later, not every 15 minutes. WhatsApp later if email isn't enough
 
 **Acceptance criteria:**
 - [ ] Each rule tested with fake heartbeats; no repeat alert within a day
-**Verification:** tests; one real email to you. **Dependencies:** Task 15. **Files:** `control/alerts.py`, `control/tests/`. **Scope:** S
+**Verification:** tests; one real email to you. **Dependencies:** Task 15. **Files:** Control Center repo: `alerts.py`, `tests/`. **Scope:** S
 
 ### Task 42: Versions and releases
 **Description:** One version number for the app (`VERSION`, e.g. 1.4.0) shown in the app, sent
@@ -486,7 +495,7 @@ session + new installer); no automatic updates in v1.
 
 **Acceptance criteria:**
 - [ ] The Versions page shows which clients are behind and since when
-**Verification:** tests; manual. **Dependencies:** Task 40. **Files:** `VERSION`, `CHANGELOG.md`, `control/`. **Scope:** S
+**Verification:** tests; manual. **Dependencies:** Task 40. **Files:** `VERSION`, `CHANGELOG.md`; Control Center repo: Versions page. **Scope:** S
 
 ### Task 17: Put the Control Center online
 **Description:** One small VPS in a Saudi data centre: Docker Compose (Caddy for HTTPS + the
@@ -498,12 +507,12 @@ the check-in address stays open (rate-limited).
 - [ ] HTTPS only; secrets not in the repo or logs; restore from backup tested once
 - [ ] A test site picks up a renewal made in the online Control Center
 
-**Verification:** `control/README.md` steps followed exactly on a fresh VPS.
-**Dependencies:** Tasks 16, 40, your VPS. **Files:** `control/README.md`, `control/deploy/`. **Scope:** M
+**Verification:** the Control Center repo's `README.md` steps followed exactly on a fresh VPS.
+**Dependencies:** Tasks 16, 40, your VPS. **Files:** Control Center repo: `README.md`, `deploy/`. **Scope:** M
 
 ### Task 18: Security review of licensing and the Control Center
-**Description:** security-auditor agent reviews `src/license.py`, `src/checkin.py`, `tools/`,
-`control/` and the app's license endpoints; fix every confirmed finding.
+**Description:** security-auditor agent reviews `src/license.py`, `src/checkin.py`, the
+Control Center repo and the app's license endpoints; fix every confirmed finding.
 
 **Acceptance criteria:**
 - [ ] No high or medium findings left open
@@ -516,80 +525,46 @@ the check-in address stays open (rate-limited).
 
 ---
 
-## Phase 9: Enterprise: central HQ (hosted by us) and manager dashboards
+## Phase 9: Manager dashboards (both editions) and Enterprise central HQ
 
-### Task 26: `updated_at` and sync cursor
+**Both editions** (core code):
+
+### Task 26: `updated_at`, sync cursor and the Enterprise hooks
 **Description:** `updated_at` on every insert, merge and fix (additive column, old rows filled
 from date + time). `meta.sync_cursor` remembers what HQ has. `Store.changed_since(cursor, n)`.
+Also the one-time Enterprise hooks, so Enterprise tasks never edit core files: `server.py` loads
+`src/enterprise/` (`register(app, store)`) when the folder is there and the license says
+Enterprise; `src/i18n.py` adds `src/enterprise/i18n.py`'s texts; `web/src/App.tsx` shows the
+pages in `web/src/enterprise/` for Enterprise licenses only.
 
 **Acceptance criteria:**
 - [ ] A fix moves the row past the cursor again; old databases upgrade, every row kept
-**Verification:** tests (test-driven). **Dependencies:** None. **Files:** `src/store.py`, `tests/test_store.py`. **Scope:** S
+- [ ] Without `src/enterprise/` the app starts and every test passes; with it and a Site key, no
+      Enterprise route answers
 
-### Task 27: HQ receive API
-**Description:** In central mode (`server.py --central`): admin creates a site and gets a
-one-time token (stored hashed). `POST /api/hq/rows` (batch upsert by site + row id),
-`PUT /api/hq/photos/{path}`, `POST /api/hq/heartbeat`. Token checked on every call.
+**Verification:** tests (test-driven). **Dependencies:** None. **Files:** `src/store.py`, `server.py`,
+`src/i18n.py`, `web/src/App.tsx`, `tests/test_store.py`, `tests/test_server.py`. **Scope:** M
 
-**Acceptance criteria:**
-- [ ] Re-sending the same batch adds nothing; a changed row updates
-- [ ] Wrong or revoked token refused; one site can't write another site's rows
-- [ ] Size limits on batches and photos
-
-**Verification:** tests (test-driven) with FastAPI's test client.
-**Dependencies:** Task 26. **Files:** `server.py`, `src/store.py`, `tests/test_hq.py`. **Scope:** M
-
-### Task 28: Site sync worker
-**Description:** A thread in the site app: every 30 s sends up to 200 changed rows, then
-their photos shrunk to ~1280 px, then a heartbeat each minute. Backs off when HQ is
-unreachable; never blocks detection; resumes from the cursor after a restart.
-
-**Acceptance criteria:**
-- [ ] HQ down for an hour: no errors on screen, catches up afterwards, no duplicates
-- [ ] Shows last successful sync time
-
-**Verification:** tests against a local HQ (test-driven); manual with the network cable out.
-**Dependencies:** Task 27. **Files:** `src/sync.py`, `tests/test_sync.py` (started from
-`server.py` in Task 30, so this task can run beside app work). **Scope:** M
-
-### Task 29: HQ mode in the app
-**Description:** Central mode hides cameras/setup pages and adds a **Sites** page (online,
-last sync, trucks today, cameras down, license state) and a site filter in Records and day
-stats; Excel per site or for all sites.
-
-**Acceptance criteria:**
-- [ ] A site offline > 15 minutes shows as offline
-- [ ] Excel for all sites has a Site column
-
-**Verification:** browser check en/ar with 2 test sites; build and commit `web/dist`.
-**Dependencies:** Task 28. **Files:** `web/src/pages/Sites.tsx`, `web/src/pages/Records.tsx`, `server.py`, `src/store.py`, `src/i18n.py`. **Scope:** L
-
-### Task 30: Site Settings: Connect to HQ
-**Description:** Paste the HQ address and token; test the connection; show last sync and
-anything waiting to be sent. Disconnect stops sending.
-
-**Acceptance criteria:**
-- [ ] A wrong token shows a plain message, not an error code
-**Verification:** browser check en/ar. **Dependencies:** Task 28. **Files:** `web/src/pages/Setup.tsx`, `server.py`, `src/i18n.py`. **Scope:** S
-
-### Task 31: Site-scoped HQ users
-**Description:** An HQ user is either all sites or a list of sites; every HQ query filters by it.
-
-**Acceptance criteria:**
-- [ ] A site-scoped user can't see another site's rows or photos, even by guessing URLs
-**Verification:** tests (test-driven). **Dependencies:** Tasks 21, 29. **Files:** `server.py`, `tests/test_hq.py`. **Scope:** S
-
-### Task 43: Manager roles
-**Description:** Two more roles next to Viewer, Operator and Admin: **Site manager** (everything
-at their site except cameras, settings and license; manages their site's users; sees the Site
-dashboard) and **HQ manager** (the HQ dashboard and every site in their scope, read and Excel;
-no camera settings). Every API route keeps a lowest role (Task 21's route test).
+### Task 43: Site manager role
+**Description:** One more role between Operator and Admin, in both editions: **Site manager**
+(everything at their site except cameras, settings and license; manages their site's users; sees
+the Site dashboard). The HQ manager role is Enterprise (Task 31). Every API route keeps a lowest
+role (Task 21's route test).
 
 **Acceptance criteria:**
 - [ ] A site manager can't open cameras, settings or license, nor another site's data
 - [ ] Existing users keep their roles after the upgrade
 
-**Verification:** tests (test-driven). **Dependencies:** Tasks 21, 31. **Files:** `server.py`, `src/store.py`, `web/src/pages/Users.tsx`, `src/i18n.py`. **Scope:** S
+**Verification:** tests (test-driven). **Dependencies:** Task 21. **Files:** `server.py`, `src/store.py`, `web/src/pages/Users.tsx`, `src/i18n.py`. **Scope:** S
+
+### Task 45: Turnaround time (time in the yard)
+**Description:** Pair each IN row with the next OUT row of the same container (or plate when
+there's no container): time in the yard, trucks still inside, longest stays. A pure function
+over rows (`src/turnaround.py`), used by both dashboards.
+
+**Acceptance criteria:**
+- [ ] Tested cases: normal in/out, out without in, in twice, a fixed reading that changes the pair
+**Verification:** tests (test-driven). **Dependencies:** Task 6 (lanes have a direction). **Files:** `src/turnaround.py`, `tests/test_turnaround.py`. **Scope:** S
 
 ### Task 44: Site manager dashboard
 **Description:** A Dashboard page for one site (also offered in the Site edition): today / this
@@ -604,14 +579,62 @@ same period last week for comparison. Plain words, an (i) on every number.
 **Verification:** API tests for the numbers; browser check en/ar. Use the dataviz skill for the charts.
 **Dependencies:** Tasks 9, 43. **Files:** `web/src/pages/Dashboard.tsx`, `server.py`, `src/store.py`, `src/i18n.py`. **Scope:** M
 
-### Task 45: Turnaround time (time in the yard)
-**Description:** Pair each IN row with the next OUT row of the same container (or plate when
-there's no container): time in the yard, trucks still inside, longest stays. A pure function
-over rows (`src/turnaround.py`), used by both dashboards.
+**Enterprise only** (code in `src/enterprise/` and `web/src/enterprise/`, left out of Site installers):
+
+### Task 27: HQ receive API
+**Description:** In central mode (`server.py --central`): admin creates a site and gets a
+one-time token (stored hashed). `POST /api/hq/rows` (batch upsert by site + row id),
+`PUT /api/hq/photos/{path}`, `POST /api/hq/heartbeat`. Token checked on every call.
 
 **Acceptance criteria:**
-- [ ] Tested cases: normal in/out, out without in, in twice, a fixed reading that changes the pair
-**Verification:** tests (test-driven). **Dependencies:** Task 6 (lanes have a direction). **Files:** `src/turnaround.py`, `tests/test_turnaround.py`. **Scope:** S
+- [ ] Re-sending the same batch adds nothing; a changed row updates
+- [ ] Wrong or revoked token refused; one site can't write another site's rows
+- [ ] Size limits on batches and photos
+
+**Verification:** tests (test-driven) with FastAPI's test client.
+**Dependencies:** Task 26. **Files:** `src/enterprise/hq_api.py`, `src/enterprise/hq_store.py`, `tests/test_hq.py`. **Scope:** M
+
+### Task 28: Site sync worker
+**Description:** A thread in the site app: every 30 s sends up to 200 changed rows, then
+their photos shrunk to ~1280 px, then a heartbeat each minute. Backs off when HQ is
+unreachable; never blocks detection; resumes from the cursor after a restart.
+
+**Acceptance criteria:**
+- [ ] HQ down for an hour: no errors on screen, catches up afterwards, no duplicates
+- [ ] Shows last successful sync time
+
+**Verification:** tests against a local HQ (test-driven); manual with the network cable out.
+**Dependencies:** Task 27. **Files:** `src/enterprise/sync.py`, `tests/test_sync.py` (started by the
+Enterprise hook from Task 26, so this task can run beside app work). **Scope:** M
+
+### Task 29: HQ mode in the app
+**Description:** Central mode hides cameras/setup pages and adds a **Sites** page (online,
+last sync, trucks today, cameras down, license state) and a site filter in Records and day
+stats; Excel per site or for all sites.
+
+**Acceptance criteria:**
+- [ ] A site offline > 15 minutes shows as offline
+- [ ] Excel for all sites has a Site column
+
+**Verification:** browser check en/ar with 2 test sites (rows sent through Task 27's API).
+**Dependencies:** Task 27. **Files:** `web/src/enterprise/Sites.tsx`, `web/src/pages/Records.tsx` (site
+filter, shown only in HQ mode), `src/enterprise/hq_api.py`, `src/enterprise/i18n.py`. **Scope:** L
+
+### Task 30: Site Settings: Connect to HQ
+**Description:** Paste the HQ address and token; test the connection; show last sync and
+anything waiting to be sent. Disconnect stops sending.
+
+**Acceptance criteria:**
+- [ ] A wrong token shows a plain message, not an error code
+**Verification:** browser check en/ar. **Dependencies:** Task 28. **Files:** `web/src/enterprise/ConnectHq.tsx`, `src/enterprise/sync.py`, `src/enterprise/i18n.py`. **Scope:** S
+
+### Task 31: HQ manager role and site-scoped HQ users
+**Description:** The **HQ manager** role: the HQ dashboard and every site in their scope, read and
+Excel, no camera settings. An HQ user is either all sites or a list of sites; every HQ query filters by it.
+
+**Acceptance criteria:**
+- [ ] A site-scoped user can't see another site's rows or photos, even by guessing URLs
+**Verification:** tests (test-driven). **Dependencies:** Tasks 21, 29. **Files:** `src/enterprise/scope.py`, `server.py` (role check), `tests/test_hq.py`. **Scope:** S
 
 ### Task 46: HQ manager dashboard
 **Description:** All sites in the HQ manager's scope in one view: trucks today and this week per
@@ -624,7 +647,7 @@ chart and the sites that need attention first. A click on a site opens its Site 
 - [ ] Per-site numbers match each site's own dashboard
 
 **Verification:** API tests with 2 test sites; browser check en/ar.
-**Dependencies:** Tasks 29, 31, 43, 44, 45. **Files:** `web/src/pages/HqDashboard.tsx`, `server.py`, `src/store.py`, `src/i18n.py`. **Scope:** M
+**Dependencies:** Tasks 29, 31, 43, 44, 45. **Files:** `web/src/enterprise/HqDashboard.tsx`, `src/enterprise/hq_api.py`, `src/enterprise/i18n.py`. **Scope:** M
 
 ### Task 32: Deploy HQ to a VPS
 **Description:** A KSA-region VPS: Caddy (HTTPS), the app as a service, nightly
@@ -673,7 +696,7 @@ central edition and its lane count.
 - [ ] One site's recorder offline pauses only that site
 
 **Verification:** tests (test-driven) for site scoping; browser check en/ar; build and commit `web/dist`.
-**Dependencies:** Task 37. **Files:** `cctv.py`, `server.py`, `src/lanes.py`, `src/store.py`, `src/license.py`, `web/src/pages/`. **Scope:** L
+**Dependencies:** Task 37. **Files:** `src/enterprise/`, `web/src/enterprise/`, `cctv.py`, `src/lanes.py`, `src/license.py`. **Scope:** L
 
 ### Checkpoint: Enterprise on a customer's server works
 - [ ] Two test sites on one install, each sees only its own; security-auditor review of site scoping

@@ -19,7 +19,11 @@ Runs on a Windows site laptop, CPU only, no cloud. Users are gate staff, not dev
 - `web/dist` is committed so sites need no Node.js: after any `web/src` change, run the build and commit `web/dist`
   (on `react-app` only; task branches don't, see Parallel work).
 - Every visible string goes in `src/i18n.py` with both `en` and `ar`; Arabic must work right-to-left.
-  Exception: the Control Center (`control/`) is the developer's own tool, English only.
+- One repo for both editions; the license key's `edition` switches Enterprise on. Enterprise-only code goes in
+  `src/enterprise/` and `web/src/enterprise/` (left out of Site installers). Core code never imports it except
+  through the hooks in `server.py`, `src/i18n.py` and `web/src/App.tsx` (Task 26); the app must run without it.
+- The Control Center and the key-signing tool are a separate private repo (`gate-reader-control`), never this one.
+  This repo only verifies keys.
 - UI text is plain language for gate staff. Explain terms like "check digit" with an (i).
 - Never commit `cameras.json`, `logs/` or `videos/*.mp4` (NVR passwords, site data).
 - `logs/gate.db` is the master record; Excel files are rebuilt from it. Don't write Excel as the source of truth.

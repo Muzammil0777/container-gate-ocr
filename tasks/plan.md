@@ -142,6 +142,25 @@ Previous plan (React app, done): [archive/plan-react-app.md](archive/plan-react-
   codes from door markings, and white-container markings could still pass as plates.
 - **Installer signing (Task 33).** A code-signing certificate so Windows trusts `setup.exe`.
 
+### Editions and repos (decided 2026-10-31)
+- **One repo and one app for both editions.** About 85-90 % of the code (OCR, lanes, Records,
+  Excel, users, licensing, Site dashboard) is the same in both; two repos or long-lived edition
+  branches would mean every fix twice and growing drift. The license key's `edition` decides what
+  is switched on.
+- **Enterprise-only code lives in its own folders:** `src/enterprise/` (HQ API, sync, site scope)
+  and `web/src/enterprise/` (Sites page, HQ dashboard, Connect to HQ). Core code never imports
+  them directly: three hooks added once in Task 26 (`server.py` loads `src/enterprise/` when it is
+  there and the key says Enterprise, `src/i18n.py` adds its texts, `web/src/App.tsx` shows its
+  pages). A **Site installer leaves `src/enterprise/` out**, so Site customers don't get the
+  server-side Enterprise code; the web bundle's Enterprise pages stay hidden and do nothing without it.
+- **The folders also split the parallel work:** a session on Enterprise works in its folders
+  while the other works on the core, without touching the same files.
+- **The Control Center is its own private repo, `gate-reader-control`** (created in Task 12): a
+  different product, only for you, deployed on your own server and never in a customer installer.
+  The license tool (`license_tool.py`, which signs keys) lives there too, so customers only ever
+  get the code that *checks* keys. The key format is shared through a sample key in this repo's
+  `tests/fixtures/license/`, tested by both repos.
+
 ### Control Center: your dashboard for every client (Phase 8, added 2026-10-28)
 ```
  Site PC (client A) ─┐  heartbeat every 15 min, HTTPS, outbound   ┌──────────────────────┐
@@ -150,13 +169,13 @@ Previous plan (React app, done): [archive/plan-react-app.md](archive/plan-react-
                                                                   │ clients              │ ──▶ email alerts
                                                                   └──────────────────────┘
 ```
-- **Separate app, separate folder** (`control/`, own FastAPI + SQLite + small React app),
-  never in a customer's installer. English only: it is your tool, not the gate staff's.
+- **Separate app, separate private repo** (`gate-reader-control`: own FastAPI + SQLite + small
+  React app), never in a customer's installer. English only: it is your tool, not the gate staff's.
 - **What it holds:** clients, sites, contracts (start, end), every license key issued (the
   ledger), deployments (machine code, edition, version) and their heartbeats (90 days).
 - **Renewal in one place:** pick the client, set the new end date (and users / lanes), the
   Control Center signs the key, and the site picks it up at its next check-in. Sites with no
-  internet: copy the key and type it in, as before. `tools/license_tool.py` stays for offline use.
+  internet: copy the key and type it in, as before. `license_tool.py` (same repo) stays for offline use.
 - **Health:** each deployment is green / amber / red (silent > 2 h, camera down > 1 h, disk
   < 10 %, license ending, errors); alerts by email, one daily summary.
 - **Versions:** each deployment reports its version; you see who is behind. Updates are
@@ -173,8 +192,8 @@ Previous plan (React app, done): [archive/plan-react-app.md](archive/plan-react-
 
 ### Manager dashboards and roles (Phase 9, added 2026-10-28)
 - **Roles:** Viewer (records, Excel) < Operator (gate staff: + live, fixes) < Site manager (+ Site
-  dashboard, their site's users) < Admin (+ cameras, settings, license). **HQ manager**: the HQ
-  dashboard and every site in their scope, read-only plus Excel.
+  dashboard, their site's users) < Admin (+ cameras, settings, license): both editions.
+  **HQ manager** (Enterprise only): the HQ dashboard and every site in their scope, read-only plus Excel.
 - **Site dashboard** (also in the Site edition: it helps sell): trucks in/out per hour and lane,
   % verified, Check rows waiting, camera downtime, fixes per staff member, turnaround time.
 - **HQ dashboard:** every site side by side, which sites need attention first, trends; a click
@@ -188,7 +207,7 @@ Previous plan (React app, done): [archive/plan-react-app.md](archive/plan-react-
 | Site edition, Enterprise option 1 sites | The customer's Windows PC at the gate | Installer (Task 33): app + detection as Windows services that start with the PC; staff open `http://<PC address>:8000` on the site network; firewall rule for port 8000; fixed address for the PC on their router | You, by remote session (AnyDesk) |
 | Enterprise option 1: HQ | One VPS per customer in a Saudi data centre | Docker Compose: Caddy (HTTPS, automatic certificate) + `server.py --central`; nightly backups; customer's own address such as `hq.<customer>.com` or one under your domain | You (in the HQ fee) |
 | Enterprise option 2: central install | The customer's server or VM in their data centre (Windows Server, or Linux) | Same app, central mode, reading each site's NVR over their network; opened on their intranet with their HTTPS certificate; needs CPU/GPU sized in Task 37 | Their IT, with your remote support over their VPN |
-| Control Center | One small VPS of yours (Saudi data centre) | Docker Compose: Caddy + `control/`; secrets as files; nightly backups | You |
+| Control Center | One small VPS of yours (Saudi data centre) | Docker Compose: Caddy + the `gate-reader-control` app; secrets as files; nightly backups | You |
 - Site PCs don't use Docker: a plain installer is lighter and easier for site IT, and OCR needs
   the CPU. HQ and Control Center do: the same Compose file per customer makes each new HQ a
   copy-and-fill-in job.
@@ -239,7 +258,7 @@ Task numbers stay as first planned.
 
 ### Phase 4: License in the app
 - [x] Task 11: License check: signed key, machine code, states, clock guard (test-driven)
-- [ ] Task 12: Your license tool: make keys, issue and inspect licenses
+- [ ] Task 12: Your license tool: make keys, issue and inspect licenses (creates the Control Center repo)
 - [ ] Task 13: Activation screen, License card, expiry banners
 - [ ] Task 14: After the grace period: detection stops, data stays available
 
@@ -275,16 +294,19 @@ Task numbers stay as first planned.
 
 ### Checkpoint: Remote renewal works
 
-### Phase 9: Enterprise: central HQ (hosted by us) and manager dashboards
-- [ ] Task 26: `updated_at` and sync cursor in the site database
+### Phase 9: Manager dashboards (both editions) and Enterprise central HQ
+Both editions (core code):
+- [ ] Task 26: `updated_at`, sync cursor and the Enterprise hooks
+- [ ] Task 43: Site manager role
+- [ ] Task 45: Turnaround time (time in the yard)
+- [ ] Task 44: Site manager dashboard
+
+Enterprise only (`src/enterprise/`, `web/src/enterprise/`):
 - [ ] Task 27: HQ receive API: enrol site, rows, photos, heartbeat
 - [ ] Task 28: Site sync worker: push, retry, resume after offline
 - [ ] Task 29: HQ mode in the app: site filter, Sites page, cross-site Excel
 - [ ] Task 30: Site Settings: Connect to HQ
-- [ ] Task 31: Site-scoped HQ users
-- [ ] Task 43: Manager roles (Site manager, HQ manager)
-- [ ] Task 44: Site manager dashboard
-- [ ] Task 45: Turnaround time (time in the yard)
+- [ ] Task 31: HQ manager role and site-scoped HQ users
 - [ ] Task 46: HQ manager dashboard
 - [ ] Task 32: Deploy HQ to a VPS, with a runbook
 
