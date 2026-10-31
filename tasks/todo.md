@@ -153,7 +153,7 @@ event, already confirmed), best photo per camera. Reuses `_Groups`, `consensus_c
 
 ## Phase 2: Detection service
 
-### Task 6: Service runs cameras by lane
+### Task 6: Service runs cameras by lane ✅ (pairing check on real recordings still open)
 **Description:** `cctv.py`: camera threads feed their lane's `LaneTracker` instead of their
 own tracker; the lane logs one row with every camera's photo. Live status per camera
 unchanged. Reloading settings restarts only the lanes that changed.
@@ -207,15 +207,15 @@ cameras.
 
 ## Phase 3: App
 
-### Task 8: Cameras page: lanes and what each camera reads
+### Task 8: Cameras page: lanes and what each camera reads ✅
 **Description:** Camera form gets *Lane* and *What does this camera read?* (container / plate /
 both, with a plain explanation and an (i)); lanes list with direction and location; Live
 groups camera cards by lane. API: settings and camera endpoints carry `lane`, `role`, `lanes`.
 
 **Acceptance criteria:**
-- [ ] A 3-camera lane can be set up without editing files
-- [ ] Old single-camera setups show and work as before
-- [ ] English and Arabic, phone width
+- [x] A 3-camera lane can be set up without editing files
+- [x] Old single-camera setups show and work as before
+- [x] English and Arabic, phone width
 
 **Verification:** API tests; browser check on a test copy with the fake recorder.
 **Dependencies:** Task 4. **Files:** `server.py`, `web/src/pages/Cameras.tsx`, `web/src/components/AddCamera.tsx`, `web/src/pages/Live.tsx`, `src/i18n.py`. **Scope:** M
