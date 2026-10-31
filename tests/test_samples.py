@@ -68,3 +68,28 @@ def test_no_verified_plate_on_container_only_images(recognizer):
     for path in EXPECTED:
         if path not in PLATES:
             assert not any(p['verified'] for p in recognizer(cv2.imread(str(ROOT / path)))['plates']), path
+
+
+def _yard(scale):
+    f = cv2.imread(str(ROOT / 'tests/data/yard_door_weights.jpg'))
+    return cv2.resize(f, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+
+
+@pytest.mark.parametrize('scale,side', [(2, 1920), (1.5, 1920), (2.5, 2560)])
+def test_yard_gives_no_junk_codes(recognizer, scale, side):
+    # Near 2.5K size the owner box joined a weight line 3 lines down ('CAAU135965?'), and the
+    # Naqleen sign's Arabic read as 'Ulau' joined the truck's plate number ('ULAU1317810')
+    out = recognizer(_yard(scale), max_side=side)
+    assert [c['code'] for c in out['codes']] == ['CAAU9873210']
+
+
+@pytest.mark.parametrize('scale', [1, 2])
+def test_white_container_markings_are_not_plates(recognizer, scale):
+    # Same doors made white with dark print (a reefer): '1499 LBS', '764 GLX', '370 LES'
+    # passed the dark-on-light check; they aren't inside a small white plate
+    img = _yard(scale)
+    door = img[:690 * scale, :670 * scale]
+    door[:] = cv2.cvtColor(255 - cv2.cvtColor(door, cv2.COLOR_BGR2GRAY), cv2.COLOR_GRAY2BGR)
+    out = recognizer(img)
+    assert [c['code'] for c in out['codes']] == ['CAAU9873210']
+    assert out['plates'] == []
