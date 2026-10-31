@@ -2,21 +2,23 @@ import { useState } from 'react'
 import { Alert, Anchor, Button, Group, Image, Paper, SegmentedControl, SimpleGrid, Stack, Text, TextInput } from '@mantine/core'
 import { IconAlertTriangle, IconCheck, IconPencil, IconPhotoOff } from '@tabler/icons-react'
 import { ApiError, send, type Truck, useT } from '../api'
-import { Direction } from './TruckTable'
+import { camsKey, Direction, hasSnapshot2, type LaneTruck } from './TruckTable'
 
 /** One truck: its readings, plate close-up (to compare with the reading), a form to correct
- *  the reading, and the snapshot. `onSaved` is called after a correction is saved. */
+ *  the reading, and the snapshots (both container cameras' in a two-camera lane). `onSaved` is called after a correction is saved. */
 export default function TruckDetail({ row, onSaved }: { row: Truck; onSaved: () => void }) {
   const t = useT()
   const [editing, setEditing] = useState(false)
   const [saved, setSaved] = useState<{ warning: string | null }>()
   const yesNo = (v: number | null) => (v === null ? '—' : t(v ? 'confirmed' : 'not_confirmed'))
+  const cams = camsKey(row)
   const details: [string, string | null][] = [
     ['plate', row.plate],
     ['plate_ar', row.plate_ar],
     ['plate_check', row.plate ? yesNo(row.plate_verified) : null],
     ['container', row.container],
     ['col_check', row.container ? yesNo(row.check_digit_ok) : null],
+    ...(cams ? [['cams_verified', t(cams, { n: (row as LaneTruck).cams_agree ?? 0 })] as [string, string]] : []),
     ['size_type', row.size_type],
     ['camera', row.camera],
     ['location', row.location],
@@ -50,6 +52,7 @@ export default function TruckDetail({ row, onSaved }: { row: Truck; onSaved: () 
         </Button>
       )}
       <Photo key={`s${row.id}`} src={row.snapshot ? `/api/records/${row.id}/snapshot` : null} label={t('snapshot')} />
+      {hasSnapshot2(row) && <Photo key={`s2${row.id}`} src={`/api/records/${row.id}/snapshot2`} label={t('snapshot2')} />}
     </Stack>
   )
 }

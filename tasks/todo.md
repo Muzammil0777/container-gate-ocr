@@ -220,14 +220,14 @@ groups camera cards by lane. API: settings and camera endpoints carry `lane`, `r
 **Verification:** API tests; browser check on a test copy with the fake recorder.
 **Dependencies:** Task 4. **Files:** `server.py`, `web/src/pages/Cameras.tsx`, `web/src/components/AddCamera.tsx`, `web/src/pages/Live.tsx`, `src/i18n.py`. **Scope:** M
 
-### Task 9: Records and Excel: verified badge, every camera's photo
+### Task 9: Records and Excel: verified badge, every camera's photo ✅
 **Description:** Table and panel show *Verified by 2 cameras* (or *1 camera only* as a Check
 reason); the panel shows both container angles and the plate photo. Photos endpoint serves
 `snapshot2` by record id like the others.
 
 **Acceptance criteria:**
-- [ ] Each Check row says why (plate not confirmed / container not confirmed / only 1 camera)
-- [ ] ZIP and Excel links include every photo
+- [x] Each Check row says why (plate not confirmed / container not confirmed / only 1 camera)
+- [x] ZIP and Excel links include every photo
 
 **Verification:** API tests for the new photo; browser check in both languages.
 **Dependencies:** Tasks 3, 6. **Files:** `server.py`, `web/src/components/TruckDetail.tsx`, `web/src/components/TruckTable.tsx`, `src/i18n.py`. **Scope:** M

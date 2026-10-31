@@ -85,9 +85,35 @@ function Check({ ok }: { ok: boolean }) {
   )
 }
 
+/** Lane fields the API sends (Task 3) that `Truck` doesn't list. */
+export type LaneTruck = Truck & { cams_agree: number | null; cams_expected: number | null; snapshot2: boolean }
+
+/** 'cams_agreed' (Verified by 2 cameras), 'one_cam_only', or null in a lane with one container camera. Same rule as cams_verified in src/store.py. */
+export function camsKey(row: Truck) {
+  const { cams_agree, cams_expected } = row as LaneTruck
+  if (!row.container || (cams_expected ?? 0) < 2) return null
+  return (cams_agree ?? 0) >= cams_expected! ? 'cams_agreed' : 'one_cam_only'
+}
+
+export const hasSnapshot2 = (row: Truck) => !!(row as LaneTruck).snapshot2
+
 function Status({ row }: { row: Truck }) {
   const t = useT()
   if (row.corrected) return <Badge color="blue" variant="light" leftSection={<IconPencil size={12} />}>{t('badge_fixed')}</Badge>
-  if (row.needs_review) return <Badge color="yellow" variant="light" leftSection={<IconAlertTriangle size={12} />}>{t('badge_check')}</Badge>
+  const cams = camsKey(row)
+  if (row.needs_review) {
+    const why = [
+      (!row.plate || !row.plate_verified) && 'why_plate',
+      (!row.container || !row.check_digit_ok) && 'why_container',
+      cams === 'one_cam_only' && cams,
+    ].filter(Boolean) as string[]
+    return (
+      <Stack gap={2} align="flex-start">
+        <Badge color="yellow" variant="light" leftSection={<IconAlertTriangle size={12} />}>{t('badge_check')}</Badge>
+        {why.map((k) => <Text key={k} size="xs" c="dimmed">{t(k)}</Text>)}
+      </Stack>
+    )
+  }
+  if (cams) return <Badge color="teal" variant="light" leftSection={<IconCircleCheck size={12} />}>{t(cams, { n: (row as LaneTruck).cams_agree! })}</Badge>
   return null
 }

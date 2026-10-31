@@ -130,6 +130,8 @@ TEXT = {
     'col_status': ('Status', 'الحالة'),
     'badge_check': ('Check', 'راجع'),
     'badge_fixed': ('Fixed', 'مصحّح'),
+    'why_plate': ('Plate not confirmed', 'اللوحة غير مؤكدة'),
+    'why_container': ('Container not confirmed', 'الحاوية غير مؤكدة'),
     'live_hint': ('"Check" means a reading may be wrong. Open Records to see the photo and fix it.',
                   '"راجع" تعني أن القراءة قد تكون خاطئة. افتح السجلات لرؤية الصورة وتصحيحها.'),
     'confirmed': ('Confirmed', 'مؤكد'),
@@ -239,9 +241,11 @@ TEXT = {
     'add_another': ('Add another camera', 'إضافة كاميرا أخرى'),
     'help': ('What does this mean?', 'ماذا يعني هذا؟'),
     'help_check': ('"Check" means the reading may be wrong: the plate was not confirmed by its Arabic letters, or the '
-                   'container number did not pass its check digit. Open the truck in Records to compare it with the photo.',
-                   '"راجع" تعني أن القراءة قد تكون خاطئة: لم تؤكد الحروف العربية اللوحة، أو لم يطابق رقم الحاوية رقم التحقق. '
-                   'افتح الشاحنة في السجلات لمقارنتها بالصورة.'),
+                   "container number did not pass its check digit, or only one of the gate's two container cameras read it. "
+                   'Open the truck in Records to compare it with the photos.',
+                   '"راجع" تعني أن القراءة قد تكون خاطئة: لم تؤكد الحروف العربية اللوحة، أو لم يطابق رقم الحاوية رقم التحقق، '
+                   'أو قرأته كاميرا واحدة فقط من كاميرتي الحاوية في البوابة. '
+                   'افتح الشاحنة في السجلات لمقارنتها بالصور.'),
     'help_check_digit': ('The last digit of a container number is a check digit, calculated from the other digits. '
                          'A misread number almost always fails it, so a green tick means the number is right.',
                          'الرقم الأخير في رقم الحاوية هو رقم التحقق، ويُحسب من باقي الأرقام. القراءة الخاطئة لا تطابقه '
