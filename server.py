@@ -40,7 +40,7 @@ from src.i18n import LANGUAGES, TEXT
 from src.iso6346 import format_code
 from src.lanes import lane_problems
 from src.recognizer import Recognizer, draw
-from src.store import LINKS, Store, needs_review, parse_fix, to_excel, to_zip
+from src.store import LINKS, ROLES, Store, needs_review, parse_fix, to_excel, to_zip
 
 WEB = config.ROOT / 'web' / 'dist'
 XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -51,17 +51,31 @@ MAX_VIDEO = 4 << 30    # bytes per uploaded video
 _started_at = 0.0
 _ocr_lock = threading.Lock()  # one OCR at a time: it already uses every CPU core
 COOKIE, SESSION_S = 'gate_session', 30 * 24 * 3600
-OPEN_API = {'/api/health', '/api/text', '/api/auth', '/api/login'}  # usable before logging in
+OPEN_API = {'/api/health', '/api/text', '/api/auth', '/api/login', '/api/logout'}  # usable before logging in
 MAX_TRIES, TRIES_WINDOW_S = 10, 300  # wrong passwords per device before it has to wait
 _failures: dict[str, list[float]] = {}
 
 app = FastAPI(title='Container Gate OCR')
 
 
-# ---------- site login ----------
-# One password per site, stored as a salted PBKDF2 hash in cameras.json. A login is a signed
-# cookie (expiry + HMAC with a per-site secret); changing the password changes the secret, which
-# logs every device out. Until a password is set, the API answers only the gate computer itself.
+def users_from_site_password(store, cfg):
+    """A site from before named users: its site password becomes user `admin` (same hash)."""
+    if cfg.get('site_password') and not store.has_users():
+        store.add_user('admin', cfg['site_password'], 'admin', name='Admin')
+
+
+@lru_cache
+def get_store():
+    store = Store(str(config.ROOT / DEFAULTS['db']))
+    users_from_site_password(store, config.load_config())
+    return store
+
+
+# ---------- login ----------
+# Named users in logs/gate.db (Store.add_user), passwords as salted PBKDF2 hashes. A login is a
+# signed cookie: user id + expiry + HMAC (per-site secret) over them and the user's password hash,
+# so a new password logs that user's other devices out, and a disabled user is out at once.
+# Until the first user exists, the API answers only the gate computer itself.
 
 def hash_password(password, salt=None, rounds=200_000):
     salt = salt or secrets.token_hex(16)
@@ -77,69 +91,100 @@ def check_password(password, stored):
         return False
 
 
-def _session(secret, expires):
-    return f"{expires}.{hmac.new(bytes.fromhex(secret), str(expires).encode(), 'sha256').hexdigest()}"
+_NO_USER = hash_password(secrets.token_hex(8))  # checked for unknown usernames, so they take as long
 
 
-def _logged_in(cfg, cookie):
+def _session(secret, user, expires):
+    msg = f"{user['id']}.{expires}.{user['password_hash']}".encode()
+    return f"{user['id']}.{expires}.{hmac.new(bytes.fromhex(secret), msg, 'sha256').hexdigest()}"
+
+
+def _user(store, cookie):
+    """The active user this cookie was made for, or None."""
     try:
-        expires = int((cookie or '').split('.')[0])
+        uid, expires, _ = (cookie or '').split('.')
+        uid, expires = int(uid), int(expires)
     except ValueError:
-        return False
-    return expires > time.time() and hmac.compare_digest(_session(cfg.get('session_secret', '00'), expires), cookie)
+        return None
+    user = store.user(uid=uid)
+    if not user or not user['active'] or expires <= time.time():
+        return None
+    good = _session(config.load_config().get('session_secret', '00'), user, expires)
+    return user if hmac.compare_digest(good.encode(), cookie.encode()) else None
 
 
 def _is_local(request):
     return request.client is not None and request.client.host in ('127.0.0.1', '::1')
 
 
-def _log_in(response, cfg):
+def _log_in(response, user):
+    cfg = config.load_config()
+    if not cfg.get('session_secret'):
+        cfg['session_secret'] = secrets.token_hex(32)
+        config.save_config(cfg)
     expires = int(time.time()) + SESSION_S
-    response.set_cookie(COOKIE, _session(cfg['session_secret'], expires), max_age=SESSION_S,
+    response.set_cookie(COOKIE, _session(cfg['session_secret'], user, expires), max_age=SESSION_S,
                         httponly=True, samesite='strict')
+
+
+def need(role):
+    """Route dependency: the lowest role (store.ROLES) that may use the route. Gives the user
+    (None on the gate computer before the first user exists)."""
+    def check(request: Request):
+        user = request.state.user
+        if user and ROLES.index(user['role']) < ROLES.index(role):
+            raise HTTPException(403, {'errors': ['not_allowed']})
+        return user
+    check.role = role
+    return check
 
 
 @app.middleware('http')
 async def site_login(request: Request, call_next):
-    path = request.url.path
+    """Checks the login before the route reads anything (an upload is refused unread)."""
+    path, request.state.user = request.url.path, None
     if path.startswith('/api/') and path not in OPEN_API:
-        cfg = config.load_config()
-        if not cfg.get('site_password'):
+        store = app.dependency_overrides.get(get_store, get_store)()  # outside Depends: honour test overrides
+        if not store.has_users():
             if not _is_local(request):
                 return JSONResponse({'detail': {'errors': ['local_only']}}, 403)
-        elif not _logged_in(cfg, request.cookies.get(COOKIE)):
+        elif not (user := _user(store, request.cookies.get(COOKIE))):
             return JSONResponse({'detail': {'errors': ['login_needed']}}, 401)
+        else:
+            request.state.user = user
     return await call_next(request)
 
 
 @app.get('/api/auth')
-def auth(request: Request):
-    cfg = config.load_config()
-    return {'password_set': bool(cfg.get('site_password')), 'local': _is_local(request),
-            'logged_in': _logged_in(cfg, request.cookies.get(COOKIE))}
+def auth(request: Request, store: Store = Depends(get_store)):
+    return {'password_set': store.has_users(), 'local': _is_local(request),
+            'logged_in': _user(store, request.cookies.get(COOKIE)) is not None}
 
 
 class Login(BaseModel):
+    username: str
     password: str
 
 
 @app.post('/api/login')
-def login(body: Login, request: Request, response: Response):
+def login(body: Login, request: Request, response: Response, store: Store = Depends(get_store)):
     """Wrong passwords are slowed down, and too many in a row make that device wait."""
     who = request.client.host if request.client else '?'
     now = time.time()
     recent = _failures[who] = [t for t in _failures.get(who, []) if now - t < TRIES_WINDOW_S]
     if len(recent) >= MAX_TRIES:
         raise HTTPException(429, {'errors': ['too_many_tries']})
-    cfg = config.load_config()
-    if not cfg.get('site_password'):
+    if not store.has_users():
         raise HTTPException(409, {'errors': ['no_password']})
-    if not check_password(body.password, cfg['site_password']):
-        recent.append(now)
+    recent.append(now)  # counted before the slow check, so tries sent at once can't slip past the limit
+    user = store.user(body.username.strip())
+    if not check_password(body.password, user['password_hash'] if user else _NO_USER):
         time.sleep(1)
-        raise HTTPException(401, {'errors': ['wrong_password']})
+        raise HTTPException(401, {'errors': ['wrong_login']})
+    if not user['active']:
+        raise HTTPException(403, {'errors': ['user_disabled']})
     _failures.pop(who, None)
-    _log_in(response, cfg)
+    _log_in(response, user)
     return {'ok': True}
 
 
@@ -155,18 +200,22 @@ class NewPassword(BaseModel):
 
 
 @app.put('/api/password')
-def set_password(body: NewPassword, response: Response):
-    """Set the site password (first time: only from the gate computer, see site_login) or
-    change it (needs the current one). Every other device is logged out."""
-    cfg = config.load_config()
-    if cfg.get('site_password') and not check_password(body.current, cfg['site_password']):
+def set_password(body: NewPassword, response: Response, user=Depends(need('viewer')),
+                 store: Store = Depends(get_store)):
+    """First time (only from the gate computer, see site_login): creates user `admin` with this
+    password. After that: changes the signed-in user's own password (needs the current one),
+    which logs that user out on every other device."""
+    if user and not check_password(body.current, user['password_hash']):
         time.sleep(1)
         raise HTTPException(403, {'errors': ['wrong_password']})
     if len(body.new) < 6:
         raise HTTPException(422, {'errors': ['short_password']})
-    cfg.update(site_password=hash_password(body.new), session_secret=secrets.token_hex(32))
-    config.save_config(cfg)
-    _log_in(response, cfg)
+    if user:
+        store.set_user_password(user['id'], hash_password(body.new))
+        uid = user['id']
+    else:
+        uid = store.add_user('admin', hash_password(body.new), 'admin', name='Admin')
+    _log_in(response, store.user(uid=uid))
     return {'ok': True}
 
 
@@ -181,18 +230,13 @@ def text():
     return {'languages': LANGUAGES, 'text': TEXT}
 
 
-@lru_cache
-def get_store():
-    return Store(str(config.ROOT / DEFAULTS['db']))
-
-
 def _enabled_cameras():
     return [c for c in config.load_config().get('cameras', []) if c.get('enabled', True)]
 
 
 # ---------- license ----------
 
-@app.get('/api/license')
+@app.get('/api/license', dependencies=[Depends(need('viewer'))])
 def get_license(store: Store = Depends(get_store)):
     """This computer's license: state (trial / active / expiring / grace / expired / unlicensed),
     end date, days left, machine code (for ordering a key), and who it was issued to."""
@@ -203,7 +247,7 @@ class LicenseKey(BaseModel):
     key: Annotated[str, StringConstraints(max_length=4000)]
 
 
-@app.post('/api/license')
+@app.post('/api/license', dependencies=[Depends(need('admin'))])
 def activate(body: LicenseKey, store: Store = Depends(get_store)):
     """Activate a pasted key at once. A wrong one is refused with the reason as a text key
     (422 {'detail': {'errors': ['license_other_machine']}}) and the saved key stays."""
@@ -218,7 +262,7 @@ def activate(body: LicenseKey, store: Store = Depends(get_store)):
     return get_license(store)
 
 
-@app.get('/api/status')
+@app.get('/api/status', dependencies=[Depends(need('viewer'))])
 def status():
     """Detection service and camera states for the Live page. A camera's state is 'ok',
     'connecting', 'offline' (no picture for `age` s; age None if never) or 'stopped'."""
@@ -238,7 +282,7 @@ def status():
             'today': date.today().isoformat(), 'cameras': out}
 
 
-@app.post('/api/service/start')
+@app.post('/api/service/start', dependencies=[Depends(need('operator'))])
 def service_start():
     global _started_at
     running, _ = config.service_status()
@@ -248,7 +292,7 @@ def service_start():
     return {'ok': True}
 
 
-@app.get('/api/live/{name}.jpg')
+@app.get('/api/live/{name}.jpg', dependencies=[Depends(need('operator'))])
 def live_picture(name: str):
     """The newest annotated picture of a camera (written by the detection service)."""
     path = config.LIVE / f'{_safe(name)}.jpg'
@@ -265,7 +309,7 @@ class Settings(BaseModel):
     language: Literal['en', 'ar'] = 'en'
 
 
-@app.get('/api/settings')
+@app.get('/api/settings', dependencies=[Depends(need('admin'))])
 def get_settings():
     """NVR login (never the password, only whether one is saved), Excel language, cameras, lanes,
     and lane setups that won't work as meant (`problems`: text key and values)."""
@@ -286,7 +330,7 @@ def _safe_camera(cam):
     return cam
 
 
-@app.put('/api/settings')
+@app.put('/api/settings', dependencies=[Depends(need('admin'))])
 def put_settings(new: Settings):
     """Save the NVR login and Excel language. An NVR address this computer can't reach is
     refused (422 {'detail': {'errors': ['unreachable']}}): usually a typo or a cable problem."""
@@ -331,7 +375,7 @@ class CameraChange(BaseModel):
     role: Role | None = None
 
 
-@app.patch('/api/cameras/{name}')
+@app.patch('/api/cameras/{name}', dependencies=[Depends(need('admin'))])
 def change_camera(name: str, change: CameraChange):
     """Switch a camera on or off, or move it to a lane / change what it reads; the detection
     service follows within a few seconds."""
@@ -347,7 +391,7 @@ def change_camera(name: str, change: CameraChange):
     return get_settings()
 
 
-@app.delete('/api/cameras/{name}')
+@app.delete('/api/cameras/{name}', dependencies=[Depends(need('admin'))])
 def delete_camera(name: str):
     """Remove a camera. Trucks it already logged stay in the records."""
     cfg = config.load_config()
@@ -371,7 +415,7 @@ def _check_roi(roi):
         raise HTTPException(422, {'errors': ['bad_area']})
 
 
-@app.post('/api/cameras')
+@app.post('/api/cameras', dependencies=[Depends(need('admin'))])
 def add_camera(cam: NewCamera):
     """Add a camera, or replace the one with the same name (in its place). Detection starts on
     it within a few seconds."""
@@ -396,7 +440,7 @@ class NewLane(BaseModel):
     location: str = ''
 
 
-@app.post('/api/lanes')
+@app.post('/api/lanes', dependencies=[Depends(need('admin'))])
 def add_lane(lane: NewLane):
     """Add a lane (the cameras that see the same truck), or replace the one with the same name."""
     cfg = config.load_config()
@@ -408,7 +452,7 @@ def add_lane(lane: NewLane):
     return get_settings()
 
 
-@app.delete('/api/lanes/{name}')
+@app.delete('/api/lanes/{name}', dependencies=[Depends(need('admin'))])
 def delete_lane(name: str):
     """Remove a lane. Its cameras stay and each works alone again, as before lanes."""
     cfg = config.load_config()
@@ -451,13 +495,13 @@ def _jpeg(img, max_width=1600):
     return cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tobytes()
 
 
-@app.post('/api/cameras/frame')
+@app.post('/api/cameras/frame', dependencies=[Depends(need('admin'))])
 def camera_frame(req: Channel):
     """The camera's current picture, for drawing its reading area."""
     return Response(_jpeg(_grab(req.channel)), media_type='image/jpeg', headers={'Cache-Control': 'no-store'})
 
 
-@app.post('/api/cameras/test')
+@app.post('/api/cameras/test', dependencies=[Depends(need('admin'))])
 def camera_test(req: Channel):
     """Read the camera's current picture (only its reading area, like the detection service)."""
     _check_roi(req.roi)
@@ -498,7 +542,7 @@ class OcrOptions(BaseModel):
     plates: bool = True
 
 
-@app.post('/api/ocr')
+@app.post('/api/ocr', dependencies=[Depends(need('operator'))])
 def ocr_photo(file: UploadFile = File(...), max_side: int = Form(1920), zoom: bool = Form(True),
               vertical: bool = Form(True), plates: bool = Form(True)):
     """Read an uploaded photo (Test page)."""
@@ -521,7 +565,7 @@ def _samples():
     return {p.name: p for p in files + [config.ROOT / 'demo_input.jpg'] if p.is_file()}
 
 
-@app.get('/api/samples')
+@app.get('/api/samples', dependencies=[Depends(need('operator'))])
 def samples():
     return list(_samples())
 
@@ -530,7 +574,7 @@ class SampleRequest(OcrOptions):
     name: str
 
 
-@app.post('/api/ocr/sample')
+@app.post('/api/ocr/sample', dependencies=[Depends(need('operator'))])
 def ocr_sample(req: SampleRequest):
     path = _samples().get(req.name)
     if path is None:
@@ -542,7 +586,7 @@ class StreamRequest(OcrOptions):
     url: str
 
 
-@app.post('/api/stream/frame')
+@app.post('/api/stream/frame', dependencies=[Depends(need('operator'))])
 def ocr_stream(req: StreamRequest):
     """Read one picture from a camera stream address (Test page). Only network streams: OpenCV
     would otherwise also open files on this computer."""
@@ -622,7 +666,7 @@ def _job(job_id):
     return job
 
 
-@app.post('/api/video')
+@app.post('/api/video', dependencies=[Depends(need('operator'))])
 def video_start(file: UploadFile = File(...), fps: float = Form(2.0), min_hits: int = Form(2),
                 direction: str = Form('IN'), location: str = Form(''), max_side: int = Form(1920),
                 zoom: bool = Form(True), vertical: bool = Form(True), plates: bool = Form(True)):
@@ -654,14 +698,14 @@ def video_start(file: UploadFile = File(...), fps: float = Form(2.0), min_hits: 
     return {'job': job_id}
 
 
-@app.get('/api/video/{job_id}')
+@app.get('/api/video/{job_id}', dependencies=[Depends(need('operator'))])
 def video_status(job_id: str):
     job = _job(job_id)
     return {'progress': round(job.progress, 3), 'seconds': round(job.seconds, 1), 'done': job.done,
             'error': job.error, 'elapsed': round(time.time() - job.started), 'rows': job.rows()}
 
 
-@app.get('/api/video/{job_id}/frame.jpg')
+@app.get('/api/video/{job_id}/frame.jpg', dependencies=[Depends(need('operator'))])
 def video_frame(job_id: str):
     """The last picture read, with its boxes."""
     frame = _job(job_id).frame
@@ -670,12 +714,12 @@ def video_frame(job_id: str):
     return Response(frame, media_type='image/jpeg', headers={'Cache-Control': 'no-store'})
 
 
-@app.get('/api/video/{job_id}/records/{rid}/{kind}')
+@app.get('/api/video/{job_id}/records/{rid}/{kind}', dependencies=[Depends(need('operator'))])
 def video_photo(job_id: str, rid: int, kind: Literal['snapshot', 'plate_image', 'snapshot2']):
     return record_photo(rid, kind, _job(job_id).store)
 
 
-@app.get('/api/video/{job_id}/excel')
+@app.get('/api/video/{job_id}/excel', dependencies=[Depends(need('operator'))])
 def video_excel(job_id: str, lang: str = 'en'):
     job = _job(job_id)
     return _download(to_excel([job.store.get(i) for i in job.ids], lang), 'gate_log_video_test.xlsx', XLSX)
@@ -686,13 +730,13 @@ def _public(row):
     return {**row, 'needs_review': needs_review(row), **{k: bool(row.get(k)) for k in LINKS}}
 
 
-@app.get('/api/records')
+@app.get('/api/records', dependencies=[Depends(need('viewer'))])
 def records(day: date, store: Store = Depends(get_store)):
     """One day's trucks, oldest first."""
     return [_public(r) for r in store.day(day.isoformat())]
 
 
-@app.get('/api/records/{rid}/{kind}')
+@app.get('/api/records/{rid}/{kind}', dependencies=[Depends(need('viewer'))])
 def record_photo(rid: int, kind: Literal['snapshot', 'plate_image', 'snapshot2'], store: Store = Depends(get_store)):
     """A truck's snapshot, second container camera's photo or plate close-up. Looked up by
     record id, so only photos that belong to a record can be fetched."""
@@ -709,7 +753,7 @@ class Fix(BaseModel):
     direction: Literal['IN', 'OUT']
 
 
-@app.patch('/api/records/{rid}')
+@app.patch('/api/records/{rid}', dependencies=[Depends(need('operator'))])
 def fix_record(rid: int, fix: Fix, store: Store = Depends(get_store)):
     """A person corrects a reading. Bad input -> 422 {'detail': {'errors': [text keys]}}.
     Saved -> the updated row, and warning 'check_digit_wrong' if the container's check digit
@@ -728,18 +772,18 @@ def _download(data, name, media_type):
     return Response(data, media_type=media_type, headers={'Content-Disposition': f'attachment; filename="{name}"'})
 
 
-@app.get('/api/excel/day/{day}')
+@app.get('/api/excel/day/{day}', dependencies=[Depends(need('viewer'))])
 def excel_day(day: date, lang: str = 'en', store: Store = Depends(get_store)):
     return _download(to_excel(store.day(day.isoformat()), lang), f'gate_log_{day}.xlsx', XLSX)
 
 
-@app.get('/api/excel/month/{month}')
+@app.get('/api/excel/month/{month}', dependencies=[Depends(need('viewer'))])
 def excel_month(month: Annotated[str, PathParam(pattern=r'^\d{4}-\d{2}$')], lang: str = 'en',
                 store: Store = Depends(get_store)):
     return _download(to_excel(store.month(month), lang), f'gate_log_{month}.xlsx', XLSX)
 
 
-@app.get('/api/zip/day/{day}')
+@app.get('/api/zip/day/{day}', dependencies=[Depends(need('viewer'))])
 def zip_day(day: date, lang: str = 'en', store: Store = Depends(get_store)):
     """The day's Excel plus every truck's photos; built when asked for (it can be large)."""
     return _download(to_zip(store.day(day.isoformat()), lang, f'gate_log_{day}'), f'gate_log_{day}.zip', 'application/zip')

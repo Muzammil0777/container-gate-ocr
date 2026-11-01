@@ -45,7 +45,17 @@ SCHEMA = '''CREATE TABLE IF NOT EXISTS trucks (
     corrected INTEGER DEFAULT 0                   -- 1 once a person fixed the reading
 );
 CREATE INDEX IF NOT EXISTS trucks_date ON trucks(date, time);
-CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);  -- app state (license, clock guard)'''
+CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);  -- app state (license, clock guard)
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    name TEXT NOT NULL DEFAULT '',
+    password_hash TEXT NOT NULL,                  -- salted PBKDF2 (server.hash_password), never the password
+    role TEXT NOT NULL CHECK (role IN ('admin', 'operator', 'viewer')),
+    active INTEGER NOT NULL DEFAULT 1,
+    created TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);'''
+ROLES = ('viewer', 'operator', 'admin')  # lowest first: each role can do what the ones before it can
 
 
 def _serial(container):
@@ -122,6 +132,28 @@ class Store:
     def meta_set(self, k, v):
         with self.lock, self.db:
             self.db.execute('INSERT INTO meta (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v', (k, v))
+
+    def add_user(self, username, password_hash, role, name=''):
+        """A new login. Raises sqlite3.IntegrityError if the username is taken (any case)."""
+        if not password_hash.startswith('pbkdf2_sha256$'):
+            raise ValueError('password_hash must be a hash, not a password')
+        with self.lock, self.db:
+            return self.db.execute('INSERT INTO users (username, name, password_hash, role) VALUES (?, ?, ?, ?)',
+                                   (username.strip(), name, password_hash, role)).lastrowid
+
+    def set_user_password(self, uid, password_hash):
+        if not password_hash.startswith('pbkdf2_sha256$'):
+            raise ValueError('password_hash must be a hash, not a password')
+        with self.lock, self.db:
+            self.db.execute('UPDATE users SET password_hash = ? WHERE id = ?', (password_hash, uid))
+
+    def user(self, username=None, uid=None):
+        """One user by username (any case) or id, as a dict, or None."""
+        r = self.db.execute('SELECT * FROM users WHERE username = ? OR id = ?', (username, uid)).fetchone()
+        return dict(r) if r else None
+
+    def has_users(self):
+        return self.db.execute('SELECT 1 FROM users LIMIT 1').fetchone() is not None
 
     def get(self, rid):
         r = self.db.execute('SELECT * FROM trucks WHERE id = ?', (rid,)).fetchone()

@@ -318,8 +318,8 @@ corrections and downloads keep working. A new key restarts detection within a mi
 start, a site with `site_password` and no users gets user `admin` with that same hash.
 
 **Acceptance criteria:**
-- [ ] An existing site logs in as `admin` with its old password, nothing else changes
-- [ ] Usernames unique (case-insensitive); passwords never stored or logged in plain text
+- [x] An existing site logs in as `admin` with its old password, nothing else changes
+- [x] Usernames unique (case-insensitive); passwords never stored or logged in plain text
 
 **Verification:** tests (test-driven): upgrade from a saved old `cameras.json` + `gate.db`.
 **Dependencies:** None. **Files:** `src/store.py`, `server.py`, `tests/test_users.py`. **Scope:** M
@@ -331,9 +331,9 @@ role allowed (viewer: records, Excel; operator: + live, fixes; admin: + settings
 users, license).
 
 **Acceptance criteria:**
-- [ ] Every route in `server.py` has a role; a test lists routes and fails on one without
-- [ ] Viewer can't fix or change settings (403); disabled user is logged out
-- [ ] Wrong-password slow-down still works per device
+- [x] Every route in `server.py` has a role; a test lists routes and fails on one without
+- [x] Viewer can't fix or change settings (403); disabled user is logged out
+- [x] Wrong-password slow-down still works per device
 
 **Verification:** tests (test-driven); browser check in en/ar.
 **Dependencies:** Task 20. **Files:** `server.py`, `web/src/pages/Login.tsx`, `src/i18n.py`, `tests/test_server.py`. **Scope:** M
