@@ -8,6 +8,7 @@ import { api, ApiError, type Auth, send, useT } from '../api'
 import AddCamera from '../components/AddCamera'
 import HelpTip from '../components/HelpTip'
 import PasswordForm from '../components/PasswordForm'
+import { LicenseCard } from './License'
 import { Direction } from '../components/TruckTable'
 
 export type Role = 'container' | 'plate' | 'both'
@@ -78,6 +79,7 @@ export default function Cameras() {
       ) : (
         <Group><Button size="md" leftSection={<IconPlus size={18} />} onClick={() => { setAdded(undefined); setAdding(true) }}>{t('add_camera_btn')}</Button></Group>
       )}
+      <LicenseCard />
       {auth && (
         <Paper id="password" withBorder radius="lg" p="lg">
           <Stack gap="md">
