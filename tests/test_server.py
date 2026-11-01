@@ -28,6 +28,10 @@ def no_real_settings(tmp_path, monkeypatch):
     """Every test starts with its own empty settings file, never the real cameras.json."""
     monkeypatch.setattr(config, 'CONFIG', tmp_path / 'settings' / 'cameras.json')
     (tmp_path / 'settings').mkdir()
+    store = Store(str(tmp_path / 'settings' / 'gate.db'))                 # and its own users, never logs/gate.db
+    app.dependency_overrides[get_store] = lambda: store
+    yield
+    app.dependency_overrides.clear()
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -419,20 +423,20 @@ def test_site_password_and_login(monkeypatch):
     local = TestClient(app, client=('127.0.0.1', 50001))
     assert local.put('/api/password', json={'new': '123'}).json()['detail'] == {'errors': ['short_password']}
     assert local.put('/api/password', json={'new': 'gate1234'}).status_code == 200
-    stored = config.load_config()['site_password']
+    stored = app.dependency_overrides[get_store]().user('admin')['password_hash']      # the first user: admin
     assert 'gate1234' not in stored and stored.startswith('pbkdf2_sha256$')
     assert local.get('/api/settings').status_code == 200                                  # logged in by setting it
 
     phone = TestClient(app, client=('192.168.1.50', 40000))
     assert phone.get('/api/settings').status_code == 401
-    assert phone.post('/api/login', json={'password': 'nope'}).json()['detail'] == {'errors': ['wrong_password']}
-    assert phone.post('/api/login', json={'password': 'gate1234'}).status_code == 200
+    assert phone.post('/api/login', json={'username': 'admin', 'password': 'nope'}).json()['detail'] == {'errors': ['wrong_login']}
+    assert phone.post('/api/login', json={'username': 'ADMIN', 'password': 'gate1234'}).status_code == 200
     assert phone.get('/api/settings').status_code == 200
     assert phone.get('/api/auth').json()['logged_in'] is True
     phone.post('/api/logout')
     assert phone.get('/api/settings').status_code == 401
 
-    assert phone.post('/api/login', json={'password': 'gate1234'}).status_code == 200
+    assert phone.post('/api/login', json={'username': 'admin', 'password': 'gate1234'}).status_code == 200
     assert phone.put('/api/password', json={'current': 'wrong', 'new': 'gate5678'}).status_code == 403
     assert phone.put('/api/password', json={'current': 'gate1234', 'new': 'gate5678'}).status_code == 200
     assert local.get('/api/settings').status_code == 401                                  # others logged out
@@ -446,11 +450,73 @@ def test_login_locks_out_after_many_wrong_tries(monkeypatch):
     client.put('/api/password', json={'new': 'gate1234'})
     phone = TestClient(app, client=('192.168.1.77', 40000))
     for _ in range(server.MAX_TRIES):
-        assert phone.post('/api/login', json={'password': 'guess'}).status_code == 401
-    r = phone.post('/api/login', json={'password': 'gate1234'})                              # even the right one
+        assert phone.post('/api/login', json={'username': 'admin', 'password': 'guess'}).status_code == 401
+    r = phone.post('/api/login', json={'username': 'admin', 'password': 'gate1234'})                              # even the right one
     assert r.status_code == 429 and r.json()['detail'] == {'errors': ['too_many_tries']}
     other = TestClient(app, client=('192.168.1.78', 40000))
-    assert other.post('/api/login', json={'password': 'gate1234'}).status_code == 200      # other devices unaffected
+    assert other.post('/api/login', json={'username': 'admin', 'password': 'gate1234'}).status_code == 200  # others fine
+
+
+def test_every_api_route_declares_a_role():
+    from fastapi.routing import APIRoute
+    missing = [r.path for r in app.routes if isinstance(r, APIRoute) and r.path not in server.OPEN_API
+               and not any(getattr(d.call, 'role', None) for d in r.dependant.dependencies)]
+    assert missing == []
+
+
+def _signed_in(store, username, role, host):
+    store.add_user(username, server.hash_password('pw123456'), role)
+    device = TestClient(app, client=(host, 40000))
+    assert device.post('/api/login', json={'username': username, 'password': 'pw123456'}).status_code == 200
+    return device
+
+
+def test_roles(site, monkeypatch):
+    monkeypatch.setattr(time, 'sleep', lambda s: None)
+    _, store = site
+    _, rid = store.add({'date': '2026-10-17', 'time': '09:00:00', 'direction': 'IN', 'plate': '3231 UTA'})
+    fix = {'plate': '3231 UTA', 'container': '', 'direction': 'OUT'}
+    viewer = _signed_in(store, 'sara', 'viewer', '192.168.1.60')
+    operator = _signed_in(store, 'omar', 'operator', '192.168.1.61')
+    admin = _signed_in(store, 'boss', 'admin', '192.168.1.62')
+    assert viewer.get('/api/records?day=2026-10-17').status_code == 200
+    assert viewer.get('/api/excel/day/2026-10-17').status_code == 200
+    r = viewer.patch(f'/api/records/{rid}', json=fix)
+    assert r.status_code == 403 and r.json()['detail'] == {'errors': ['not_allowed']}
+    assert viewer.get('/api/settings').status_code == 403
+    assert viewer.put('/api/settings', json={}).status_code == 403
+    assert viewer.post('/api/service/start').status_code == 403
+    assert operator.patch(f'/api/records/{rid}', json=fix).status_code == 200
+    assert operator.get('/api/settings').status_code == 403
+    assert operator.post('/api/license', json={'key': 'x'}).status_code == 403
+    assert admin.get('/api/settings').status_code == 200
+    assert viewer.put('/api/password', json={'current': 'pw123456', 'new': 'mine1234'}).status_code == 200  # own password
+
+
+def test_disabled_user_is_logged_out_at_once(site, monkeypatch):
+    monkeypatch.setattr(time, 'sleep', lambda s: None)
+    _, store = site
+    device = _signed_in(store, 'omar', 'operator', '192.168.1.61')
+    assert device.get('/api/records?day=2026-10-17').status_code == 200
+    with store.db:
+        store.db.execute("UPDATE users SET active = 0 WHERE username = 'omar'")
+    assert device.get('/api/records?day=2026-10-17').status_code == 401
+    assert device.get('/api/auth').json()['logged_in'] is False
+    r = device.post('/api/login', json={'username': 'omar', 'password': 'pw123456'})
+    assert r.status_code == 403 and r.json()['detail'] == {'errors': ['user_disabled']}
+    r = device.post('/api/login', json={'username': 'nobody', 'password': 'pw123456'})
+    assert r.status_code == 401 and r.json()['detail'] == {'errors': ['wrong_login']}   # same as a wrong password
+
+
+def test_old_site_signs_in_as_admin_with_its_old_password(site, monkeypatch):
+    monkeypatch.setattr(time, 'sleep', lambda s: None)
+    _, store = site
+    config.save_config({**config.load_config(), 'site_password': server.hash_password('gate1234'),
+                        'session_secret': 'ab' * 32})
+    server.users_from_site_password(store, config.load_config())                    # what get_store does on start
+    phone = TestClient(app, client=('192.168.1.50', 40000))
+    assert phone.post('/api/login', json={'username': 'admin', 'password': 'gate1234'}).status_code == 200
+    assert phone.get('/api/settings').status_code == 200
 
 
 def test_password_hash_roundtrip():

@@ -331,9 +331,9 @@ role allowed (viewer: records, Excel; operator: + live, fixes; admin: + settings
 users, license).
 
 **Acceptance criteria:**
-- [ ] Every route in `server.py` has a role; a test lists routes and fails on one without
-- [ ] Viewer can't fix or change settings (403); disabled user is logged out
-- [ ] Wrong-password slow-down still works per device
+- [x] Every route in `server.py` has a role; a test lists routes and fails on one without
+- [x] Viewer can't fix or change settings (403); disabled user is logged out
+- [x] Wrong-password slow-down still works per device
 
 **Verification:** tests (test-driven); browser check in en/ar.
 **Dependencies:** Task 20. **Files:** `server.py`, `web/src/pages/Login.tsx`, `src/i18n.py`, `tests/test_server.py`. **Scope:** M
