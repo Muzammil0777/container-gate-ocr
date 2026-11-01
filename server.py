@@ -181,9 +181,17 @@ def text():
     return {'languages': LANGUAGES, 'text': TEXT}
 
 
+def users_from_site_password(store, cfg):
+    """A site from before named users: its site password becomes user `admin` (same hash)."""
+    if cfg.get('site_password') and not store.has_users():
+        store.add_user('admin', cfg['site_password'], 'admin', name='Admin')
+
+
 @lru_cache
 def get_store():
-    return Store(str(config.ROOT / DEFAULTS['db']))
+    store = Store(str(config.ROOT / DEFAULTS['db']))
+    users_from_site_password(store, config.load_config())
+    return store
 
 
 def _enabled_cameras():

@@ -318,8 +318,8 @@ corrections and downloads keep working. A new key restarts detection within a mi
 start, a site with `site_password` and no users gets user `admin` with that same hash.
 
 **Acceptance criteria:**
-- [ ] An existing site logs in as `admin` with its old password, nothing else changes
-- [ ] Usernames unique (case-insensitive); passwords never stored or logged in plain text
+- [x] An existing site logs in as `admin` with its old password, nothing else changes
+- [x] Usernames unique (case-insensitive); passwords never stored or logged in plain text
 
 **Verification:** tests (test-driven): upgrade from a saved old `cameras.json` + `gate.db`.
 **Dependencies:** None. **Files:** `src/store.py`, `server.py`, `tests/test_users.py`. **Scope:** M
