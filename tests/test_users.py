@@ -62,3 +62,7 @@ def test_usernames_unique_in_any_case(tmp_path):
     with pytest.raises(ValueError):
         store.add_user('sara', 'plain password', 'viewer')                          # never a plain password
     assert store.user('nobody') is None
+    store.set_user_password(uid, server.hash_password('new12345'))
+    assert server.check_password('new12345', store.user(uid=uid)['password_hash'])
+    with pytest.raises(ValueError):
+        store.set_user_password(uid, 'new12345')

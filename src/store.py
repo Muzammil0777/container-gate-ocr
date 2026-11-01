@@ -141,6 +141,12 @@ class Store:
             return self.db.execute('INSERT INTO users (username, name, password_hash, role) VALUES (?, ?, ?, ?)',
                                    (username.strip(), name, password_hash, role)).lastrowid
 
+    def set_user_password(self, uid, password_hash):
+        if not password_hash.startswith('pbkdf2_sha256$'):
+            raise ValueError('password_hash must be a hash, not a password')
+        with self.lock, self.db:
+            self.db.execute('UPDATE users SET password_hash = ? WHERE id = ?', (password_hash, uid))
+
     def user(self, username=None, uid=None):
         """One user by username (any case) or id, as a dict, or None."""
         r = self.db.execute('SELECT * FROM users WHERE username = ? OR id = ?', (username, uid)).fetchone()
