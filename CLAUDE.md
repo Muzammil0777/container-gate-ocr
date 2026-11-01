@@ -29,6 +29,18 @@ Runs on a Windows site laptop, CPU only, no cloud. Users are gate staff, not dev
 - `logs/gate.db` is the master record; Excel files are rebuilt from it. Don't write Excel as the source of truth.
 - Big changes: plan in `tasks/plan.md`, then one task = one commit, tests passing before each commit.
 
+## Skills (ECC)
+Use these for this project; ignore skills for other stacks.
+- Python/FastAPI: `ecc:fastapi-patterns`, `ecc:python-patterns`, `ecc:python-testing`
+- React/TS/Vite: `ecc:react-patterns`, `ecc:typescript-patterns`, `ecc:vite-patterns`, `ecc:react-testing`
+- en/ar strings, RTL: `ecc:i18n-sync`, `ecc:frontend-a11y`
+- Login, license keys, NVR passwords: `ecc:security-review`
+- Site installers: `ecc:generating-python-installer`
+- Before a commit: run `ecc:python-reviewer` / `ecc:react-reviewer` / `ecc:fastapi-reviewer` on the diff,
+  then `ecc:verification-loop`.
+These rules win over any skill: minimal diffs, TDD only when asked (ignore ECC's 80% coverage target),
+no skill pushes or opens PRs on its own, and worktrees follow "Parallel work".
+
 ## Parallel work (Orca worktrees)
 Two sessions may run at once, each in its own worktree. Rounds and file ownership: `tasks/todo.md`, "Parallel work".
 - Work on your own branch `task/<n>-<short-name>` made from `react-app`. Never commit on `react-app` or `main`,
