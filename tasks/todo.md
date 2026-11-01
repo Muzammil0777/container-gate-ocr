@@ -232,13 +232,13 @@ reason); the panel shows both container angles and the plate photo. Photos endpo
 **Verification:** API tests for the new photo; browser check in both languages.
 **Dependencies:** Tasks 3, 6. **Files:** `server.py`, `web/src/components/TruckDetail.tsx`, `web/src/components/TruckTable.tsx`, `src/i18n.py`. **Scope:** M
 
-### Task 10: Setup wizard: second container camera and plate camera
+### Task 10: Setup wizard: second container camera and plate camera ✅
 **Description:** After the first camera, the wizard offers *Add the second container camera
 for this gate* and *Add the plate camera*, each with the channel pictures; both can be skipped.
 
 **Acceptance criteria:**
-- [ ] A full lane (3 cameras) can be set up from the wizard alone
-- [ ] Skipping gives a working single-camera lane
+- [x] A full lane (3 cameras) can be set up from the wizard alone
+- [x] Skipping gives a working single-camera lane
 
 **Verification:** browser walk-through on a fresh test copy.
 **Dependencies:** Task 8. **Files:** `web/src/pages/Setup.tsx`, `src/i18n.py`. **Scope:** S

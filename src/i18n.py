@@ -239,6 +239,23 @@ TEXT = {
                         'افتح صفحة البث المباشر لمشاهدة الكاميرا. تظهر هناك كل شاحنة تمر، وفي ملف Excel أيضاً.'),
     'open_live': ('Open Live', 'فتح البث المباشر'),
     'add_another': ('Add another camera', 'إضافة كاميرا أخرى'),
+    'step_more': ('More cameras', 'كاميرات أخرى'),
+    'step_more_help': ('Optional: the same gate from other angles', 'اختياري: نفس البوابة من زوايا أخرى'),
+    'add_second_container': ('Add the second container camera for this gate', 'إضافة كاميرا الحاوية الثانية لهذه البوابة'),
+    'add_second_container_help': ('A second camera that sees the container from another side. When both read the same '
+                                  'number, the truck is marked "Verified by 2 cameras".',
+                                  'كاميرا ثانية ترى الحاوية من جهة أخرى. عندما تقرأ الكاميرتان الرقم نفسه، تُعلَّم الشاحنة '
+                                  '"مؤكد من كاميرتين".'),
+    'add_plate_camera': ('Add the plate camera', 'إضافة كاميرا اللوحة'),
+    'add_plate_camera_help': ('A camera that sees the number plate up close. The gate camera then reads only the container.',
+                              'كاميرا ترى لوحة الأرقام عن قرب. عندها تقرأ كاميرا البوابة رقم الحاوية فقط.'),
+    'pick_second_channel': ('Which picture shows the container from the other side? Tap it.',
+                            'أي صورة تُظهر الحاوية من الجهة الأخرى؟ اضغط عليها.'),
+    'pick_plate_channel': ('Which picture shows the number plate? Tap it.', 'أي صورة تُظهر لوحة الأرقام؟ اضغط عليها.'),
+    'lane_has_cameras': ('This gate now has {n} cameras working together.', 'لهذه البوابة الآن {n} كاميرات تعمل معاً.'),
+    'add': ('Add', 'إضافة'),
+    'no_more_cameras': ('No more cameras, finish', 'لا مزيد من الكاميرات، إنهاء'),
+    'finish': ('Finish', 'إنهاء'),
     'help': ('What does this mean?', 'ماذا يعني هذا؟'),
     'help_check': ('"Check" means the reading may be wrong: the plate was not confirmed by its Arabic letters, or the '
                    "container number did not pass its check digit, or only one of the gate's two container cameras read it. "
