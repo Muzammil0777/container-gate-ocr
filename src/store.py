@@ -147,6 +147,18 @@ class Store:
         with self.lock, self.db:
             self.db.execute('UPDATE users SET password_hash = ? WHERE id = ?', (password_hash, uid))
 
+    def update_user(self, uid, **fields):
+        """Change a user's name, role or active (other fields are ignored)."""
+        allowed = {k: v for k, v in fields.items() if k in ('name', 'role', 'active')}
+        if allowed:
+            with self.lock, self.db:
+                self.db.execute(f"UPDATE users SET {', '.join(f'{k} = ?' for k in allowed)} WHERE id = ?",
+                                [*allowed.values(), uid])
+
+    def users(self):
+        """Every user, oldest first, without the password hash."""
+        return [dict(r) for r in self.db.execute('SELECT id, username, name, role, active, created FROM users ORDER BY id')]
+
     def user(self, username=None, uid=None):
         """One user by username (any case) or id, as a dict, or None."""
         r = self.db.execute('SELECT * FROM users WHERE username = ? OR id = ?', (username, uid)).fetchone()
