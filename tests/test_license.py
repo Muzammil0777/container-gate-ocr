@@ -1,5 +1,9 @@
 """License keys: signed by the vendor, checked offline on the gate computer."""
+import json
+import re
+import subprocess
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from cryptography.hazmat.primitives import serialization
@@ -104,3 +108,25 @@ def test_setting_the_clock_back_does_not_extend_anything(tmp_path):
     back = lic.check(store, HERE, KEYS, datetime(2026, 11, 1, 9, 0))  # clock set back 70 days
     assert back['state'] == 'grace' and back['clock_behind'] is True
     assert lic.check(store, HERE, KEYS, datetime(2027, 2, 1, 9, 0))['state'] == 'expired'
+
+
+FIXTURE = Path(__file__).parent / 'fixtures' / 'license' / 'sample_key.json'
+
+
+def test_a_key_from_the_license_tool_is_accepted():
+    """sample_key.json was made by the Control Center's license_tool.py, whose tests check it too."""
+    sample = json.loads(FIXTURE.read_text(encoding='utf-8'))
+    payload, error = lic.read_key(sample['key'], sample['public_keys'], sample['machine'])
+    assert error is None
+    assert {k: v for k, v in payload.items() if k != 'kid'} == sample['payload']
+    assert payload['kid'] in sample['public_keys']
+
+
+def test_no_private_key_file_is_in_the_repo():
+    root = Path(__file__).resolve().parent.parent
+    files = subprocess.run(['git', 'ls-files', '--cached', '--others', '--exclude-standard'], cwd=root,
+                           capture_output=True, text=True, check=True).stdout.splitlines()
+    found = [f for f in files if Path(f).suffix.lower() in ('.pem', '.key')
+             or (root / f).is_file() and (root / f).stat().st_size < 1_000_000
+             and re.search(rb'-----BEGIN [A-Z ]*PRIVATE KEY-----', (root / f).read_bytes())]
+    assert found == [], f'private key files inside the repo: {found}'

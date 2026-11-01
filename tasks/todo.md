@@ -264,17 +264,17 @@ and the clock guard (latest time seen, kept in the database).
 **Verification:** 17 tests written first (failing), with keys made by a test-only key pair. Stored in a new `meta` table in gate.db (key, trial start, latest time seen). `PUBLIC_KEYS` is empty until Task 12 makes your real key pair.
 **Dependencies:** None (can start in parallel with Phase 1). **Files:** `src/license.py`, `src/store.py` (meta table), `tests/test_license.py`, `requirements.txt`. **Scope:** M
 
-### Task 12: Your license tool
+### Task 12: Your license tool ✅
 **Description:** Creates the Control Center repo (`gate-reader-control`), private on GitHub, with its own `CLAUDE.md`.
 `license_tool.py` there: `keygen` (once; private key saved outside the repo),
 `issue --customer --site --machine CODE --days 365 [--cameras N]` prints the key and adds it to
 a local ledger, `inspect KEY` shows what is inside.
 
 **Acceptance criteria:**
-- [ ] Keys it issues are accepted by Task 11: a sample key made with the test key pair is saved in
+- [x] Keys it issues are accepted by Task 11: a sample key made with the test key pair is saved in
       this repo's `tests/fixtures/license/`, and both repos test against it so the format can't drift
-- [ ] A test fails if a private key file is ever inside either repo
-- [ ] Clear instructions printed for backing up the private key
+- [x] A test fails if a private key file is ever inside either repo
+- [x] Clear instructions printed for backing up the private key
 
 **Verification:** tests (issue, inspect, round trip); dry run.
 **Dependencies:** Task 11. **Files:** Control Center repo: `license_tool.py`, `tests/`, `.gitignore`;
