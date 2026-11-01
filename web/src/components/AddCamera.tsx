@@ -13,15 +13,15 @@ import OcrResultView, { type OcrResult } from './OcrResult'
  *  on the camera's current picture, with a test read of that area. */
 export default function AddCamera({ settings, onSaved, onCancel, initial }: {
   settings: Settings; onSaved: (s: Settings, name: string) => void; onCancel: () => void
-  initial?: { channel: number; picture: string }  // already chosen (setup wizard)
+  initial?: { channel: number; picture: string; lane?: string; role?: Role }  // already chosen (setup wizard)
 }) {
   const t = useT()
   const [name, setName] = useState('')
   const [channel, setChannel] = useState<number | string>(initial?.channel ?? 1)
   const [direction, setDirection] = useState<'IN' | 'OUT'>('IN')
   const [location, setLocation] = useState('')
-  const [lane, setLane] = useState('')
-  const [role, setRole] = useState<Role>('both')
+  const [lane, setLane] = useState(initial?.lane ?? '')
+  const [role, setRole] = useState<Role>(initial?.role ?? 'both')
   const [roi, setRoi] = useState<number[] | null>(null)
   const [picture, setPicture] = useState(initial?.picture)
   const [result, setResult] = useState<OcrResult>()

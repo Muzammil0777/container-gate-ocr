@@ -457,3 +457,64 @@ def test_password_hash_roundtrip():
     h = server.hash_password('Secret 123')
     assert server.check_password('Secret 123', h) and not server.check_password('secret 123', h)
     assert not server.check_password('x', '') and not server.check_password('x', 'garbage')
+
+
+# ---------- license (keys made by a test-only key pair, never the real one) ----------
+
+@pytest.fixture
+def licensed(site, monkeypatch):
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from src import license as lic
+    private = Ed25519PrivateKey.generate()
+    raw = private.private_bytes(serialization.Encoding.Raw, serialization.PrivateFormat.Raw,
+                                serialization.NoEncryption())
+    public = private.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+    monkeypatch.setattr(lic, 'PUBLIC_KEYS', {'t1': public})
+    monkeypatch.setattr(lic, '_machine_guid', lambda: 'test-machine')
+    here = lic.machine_code('test-machine')
+
+    def make(machine=here, expires='2099-01-01'):
+        return lic.make_key({'lid': 'L-1', 'customer': 'Port Co', 'site': 'Jeddah', 'machine': machine,
+                             'expires': expires}, raw, 't1')
+    return here, make, site[1]
+
+
+def test_license_starts_as_a_trial_with_the_machine_code(licensed):
+    here, _, _ = licensed
+    body = client.get('/api/license').json()
+    assert body['state'] == 'trial' and body['days_left'] == 14 and body['machine'] == here
+
+
+def test_a_pasted_key_activates_at_once(licensed):
+    _, make, store = licensed
+    key = make()
+    body = client.post('/api/license', json={'key': f'  {key[:30]}\n{key[30:]} '}).json()
+    assert body['state'] == 'active' and body['customer'] == 'Port Co' and body['ends'] == '2099-01-01'
+    assert store.meta_get('license_key') == key
+    assert client.get('/api/license').json()['state'] == 'active'
+
+
+@pytest.mark.parametrize('which, reason', [
+    ('junk', 'license_bad_format'), ('other', 'license_other_machine'), ('old', 'license_key_expired')])
+def test_wrong_keys_are_refused_with_a_reason_and_keep_the_saved_key(licensed, which, reason):
+    _, make, store = licensed
+    client.post('/api/license', json={'key': make()})
+    key = {'junk': 'hello', 'other': make(machine='AAAA-BBBB-CCCC'), 'old': make(expires='2020-01-01')}[which]
+    r = client.post('/api/license', json={'key': key})
+    assert r.status_code == 422 and r.json()['detail']['errors'] == [reason]
+    assert client.get('/api/license').json()['state'] == 'active'
+
+
+def test_license_texts_exist_in_both_languages():
+    for k in ('license_bad_format', 'license_unknown_signer', 'license_bad_signature', 'license_other_machine',
+              'license_key_expired', 'license_banner_expiring', 'license_banner_grace', 'license_banner_expired',
+              'license_banner_unlicensed', 'license_contact'):
+        assert all(TEXT[k]), k
+
+
+def test_a_key_that_ended_by_the_latest_time_seen_is_refused_even_with_the_clock_set_back(licensed):
+    _, make, store = licensed
+    store.meta_set('last_seen', '2099-06-01T08:00:00')  # the clock was later than now before
+    r = client.post('/api/license', json={'key': make(expires='2099-01-01')})
+    assert r.status_code == 422 and r.json()['detail']['errors'] == ['license_key_expired']

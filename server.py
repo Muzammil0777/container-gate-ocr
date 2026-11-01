@@ -22,7 +22,7 @@ from typing import Annotated, Literal
 
 # Imports the OCR code first: on Windows, a library loaded earlier (pandas was one) can make
 # onnxruntime fail with "DLL load failed while importing onnxruntime_pybind11_state".
-from src import config  # noqa: I001
+from src import config, license  # noqa: I001
 
 import cv2
 import numpy as np
@@ -188,6 +188,34 @@ def get_store():
 
 def _enabled_cameras():
     return [c for c in config.load_config().get('cameras', []) if c.get('enabled', True)]
+
+
+# ---------- license ----------
+
+@app.get('/api/license')
+def get_license(store: Store = Depends(get_store)):
+    """This computer's license: state (trial / active / expiring / grace / expired / unlicensed),
+    end date, days left, machine code (for ordering a key), and who it was issued to."""
+    return {**license.check(store), 'grace_days': license.GRACE_DAYS}
+
+
+class LicenseKey(BaseModel):
+    key: Annotated[str, StringConstraints(max_length=4000)]
+
+
+@app.post('/api/license')
+def activate(body: LicenseKey, store: Store = Depends(get_store)):
+    """Activate a pasted key at once. A wrong one is refused with the reason as a text key
+    (422 {'detail': {'errors': ['license_other_machine']}}) and the saved key stays."""
+    key = ''.join(body.key.split())
+    payload, error = license.read_key(key)
+    today = max(date.today(), date.fromisoformat((store.meta_get('last_seen') or '0001-01-01')[:10]))  # clock guard
+    if not error and license.status(payload, today, today)['state'] == 'expired':
+        error = 'license_key_expired'
+    if error:
+        raise HTTPException(422, {'errors': [error]})
+    store.meta_set('license_key', key)
+    return get_license(store)
 
 
 @app.get('/api/status')

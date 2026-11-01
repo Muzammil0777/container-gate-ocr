@@ -232,13 +232,13 @@ reason); the panel shows both container angles and the plate photo. Photos endpo
 **Verification:** API tests for the new photo; browser check in both languages.
 **Dependencies:** Tasks 3, 6. **Files:** `server.py`, `web/src/components/TruckDetail.tsx`, `web/src/components/TruckTable.tsx`, `src/i18n.py`. **Scope:** M
 
-### Task 10: Setup wizard: second container camera and plate camera
+### Task 10: Setup wizard: second container camera and plate camera ✅
 **Description:** After the first camera, the wizard offers *Add the second container camera
 for this gate* and *Add the plate camera*, each with the channel pictures; both can be skipped.
 
 **Acceptance criteria:**
-- [ ] A full lane (3 cameras) can be set up from the wizard alone
-- [ ] Skipping gives a working single-camera lane
+- [x] A full lane (3 cameras) can be set up from the wizard alone
+- [x] Skipping gives a working single-camera lane
 
 **Verification:** browser walk-through on a fresh test copy.
 **Dependencies:** Task 8. **Files:** `web/src/pages/Setup.tsx`, `src/i18n.py`. **Scope:** S
@@ -280,15 +280,15 @@ a local ledger, `inspect KEY` shows what is inside.
 **Dependencies:** Task 11. **Files:** Control Center repo: `license_tool.py`, `tests/`, `.gitignore`;
 this repo: `tests/fixtures/license/`, `tests/test_license.py`. **Scope:** S
 
-### Task 13: Activation screen, License card, expiry banners
+### Task 13: Activation screen, License card, expiry banners ✅
 **Description:** API: `GET /api/license` (state, end date, days left, machine code),
 `POST /api/license` (paste a key). App: activation screen when there's no license (after the
 trial, if any), a License card on the Cameras page, banners from 30 days before with your
 contact details.
 
 **Acceptance criteria:**
-- [ ] Machine code shown with a copy button; a pasted key activates at once
-- [ ] Banners in English and Arabic; wrong keys get plain messages
+- [x] Machine code shown with a copy button; a pasted key activates at once
+- [x] Banners in English and Arabic; wrong keys get plain messages
 
 **Verification:** API tests; browser check of each state (keys made by the test key pair).
 **Dependencies:** Tasks 11, 12. **Files:** `server.py`, `web/src/pages/License.tsx`, `web/src/App.tsx`, `src/i18n.py`, `tests/test_server.py`. **Scope:** M

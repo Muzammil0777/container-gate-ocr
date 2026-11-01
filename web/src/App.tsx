@@ -8,6 +8,7 @@ import { IconCamera, IconClipboardList, IconFlask, IconLock, IconLogout, IconTru
 import { api, type Auth, type Lang, send, TextContext, type TextTable, useT } from './api'
 import type { Settings } from './pages/Cameras'
 import Cameras from './pages/Cameras'
+import LicensePage, { LicenseBanner, type License, needsKey } from './pages/License'
 import Live from './pages/Live'
 import Login from './pages/Login'
 import Records from './pages/Records'
@@ -20,10 +21,10 @@ const PAGES = [
   { key: 'cameras', icon: IconCamera },
   { key: 'test', icon: IconFlask },
 ] as const
-type Page = (typeof PAGES)[number]['key'] | 'setup'  // setup: not in the menu, opened on first run
+type Page = (typeof PAGES)[number]['key'] | 'setup' | 'license'  // not in the menu: opened on first run / with no license
 
 const pageFromHash = (): Page =>
-  location.hash === '#setup' ? 'setup' : PAGES.find((p) => `#${p.key}` === location.hash)?.key ?? 'live'
+  location.hash === '#setup' ? 'setup' : location.hash === '#license' ? 'license' : PAGES.find((p) => `#${p.key}` === location.hash)?.key ?? 'live'
 
 function savedLang(): Lang {
   try {
@@ -111,6 +112,11 @@ function Shell({ languageSwitch, auth, onSignOut }: { languageSwitch: React.Reac
 
   useEffect(() => { document.title = `${t(`nav_${page}`)} · ${t('app_name')}` }, [page, t])
 
+  useEffect(() => {  // after the trial with no key (or once it has run out), the activation screen
+    if (location.hash) return
+    api<License>('/api/license').then((l) => { if (needsKey(l)) location.hash = '#license' }).catch(() => {})
+  }, [])
+
   useEffect(() => {  // a fresh install (no recorder, no camera) opens the setup wizard
     if (location.hash || setupSkipped()) return
     api<Settings>('/api/settings')
@@ -165,11 +171,12 @@ function Shell({ languageSwitch, auth, onSignOut }: { languageSwitch: React.Reac
       </AppShell.Navbar>
 
       <AppShell.Main>
+        <LicenseBanner />
         <Stack gap="xs" mb="lg">
           <Title order={2}>{t(`nav_${page}`)}</Title>
           <Text c="dimmed">{t(`nav_${page}_help`)}</Text>
         </Stack>
-        {page === 'live' ? <Live /> : page === 'records' ? <Records /> : page === 'cameras' ? <Cameras /> : page === 'test' ? <Test /> : page === 'setup' ? <Setup /> : (
+        {page === 'live' ? <Live /> : page === 'records' ? <Records /> : page === 'cameras' ? <Cameras /> : page === 'test' ? <Test /> : page === 'setup' ? <Setup /> : page === 'license' ? <LicensePage /> : (
           <Paper withBorder p="xl" radius="lg">
             <Text c="dimmed">{t('coming_soon')}</Text>
           </Paper>
