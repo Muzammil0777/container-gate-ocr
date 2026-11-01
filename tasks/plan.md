@@ -265,8 +265,8 @@ Task numbers stay as first planned.
 ### Checkpoint: Licensing works offline
 
 ### Phase 5: Named users and seats
-- [ ] Task 20: Users table, upgrade from the site password
-- [ ] Task 21: Login by username, roles checked on every API route
+- [x] Task 20: Users table, upgrade from the site password
+- [x] Task 21: Login by username, roles checked on every API route
 - [ ] Task 22: Users page (admin)
 - [ ] Task 23: Who fixed a reading (`corrected_by`)
 
@@ -284,7 +284,7 @@ Task numbers stay as first planned.
 ### Checkpoint: Site edition can be sold
 
 ### Phase 8: Control Center (your dashboard for every client)
-- [ ] Task 15: Control Center server: clients, contracts, licenses, check-in, 2FA login
+- [x] Task 15: Control Center server: clients, contracts, licenses, check-in, 2FA login
 - [ ] Task 16: App heartbeat every 15 minutes, picks up renewals
 - [ ] Task 40: Control Center pages: Clients, Renewals, Health, Versions
 - [ ] Task 41: Alerts to you by email

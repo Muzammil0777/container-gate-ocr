@@ -312,7 +312,7 @@ corrections and downloads keep working. A new key restarts detection within a mi
 
 ## Phase 5: Named users and seats
 
-### Task 20: Users table, upgrade from the site password
+### Task 20: Users table, upgrade from the site password ✅
 **Description:** `users` table in `logs/gate.db` (username, name, password hash, role
 `admin`/`operator`/`viewer`, active, created). Reuse `hash_password` / `check_password`. On
 start, a site with `site_password` and no users gets user `admin` with that same hash.
@@ -324,7 +324,7 @@ start, a site with `site_password` and no users gets user `admin` with that same
 **Verification:** tests (test-driven): upgrade from a saved old `cameras.json` + `gate.db`.
 **Dependencies:** None. **Files:** `src/store.py`, `server.py`, `tests/test_users.py`. **Scope:** M
 
-### Task 21: Login by username, roles on every route
+### Task 21: Login by username, roles on every route ✅
 **Description:** `/api/login` takes username + password; the cookie carries the user id inside
 the HMAC. A disabled user's cookie stops working at once. Each API route declares the lowest
 role allowed (viewer: records, Excel; operator: + live, fixes; admin: + settings, cameras,
@@ -431,7 +431,7 @@ A separate app that only you use, in its own private Control Center repo (`gate-
 renewal keys, the health of every deployed site and which version it runs. It replaces the
 plain license server. Design and check-in contract: plan.md, "Control Center".
 
-### Task 15: Control Center server
+### Task 15: Control Center server ✅
 **Description:** In the Control Center repo (its own small FastAPI app and SQLite, never shipped to customers):
 clients, sites, deployments (machine code, edition, version), contracts (start, end), licenses
 (every key issued, the ledger) and heartbeats (kept 90 days). `POST /v1/checkin` takes the
@@ -440,10 +440,10 @@ with password + authenticator code (TOTP). Signs keys with the same code as
 `license_tool.py` (Task 12, same repo); the private key is a secret file on the server, never in the repo.
 
 **Acceptance criteria:**
-- [ ] Renew: the next check-in returns the new key; End: the next check-in returns ended
-- [ ] Wrong password or code refused and slowed down; check-ins rate-limited; a check-in can
+- [x] Renew: the next check-in returns the new key; End: the next check-in returns ended
+- [x] Wrong password or code refused and slowed down; check-ins rate-limited; a check-in can
       only report for its own license and machine
-- [ ] A test fails if a private key file is ever inside the repo
+- [x] A test fails if a private key file is ever inside the repo
 
 **Verification:** tests (test-driven) with FastAPI's test client.
 **Dependencies:** Task 12. **Files:** Control Center repo: `app.py`, `store.py`, `tests/`. **Scope:** M
@@ -457,7 +457,8 @@ cameras online, last truck time, trucks and Check rows today, disk free, errors 
 The License card shows the last check-in and a *Check now* button.
 
 **Acceptance criteria:**
-- [ ] No internet / Control Center down: nothing changes, no errors on screen
+- [ ] No internet / Control Center down / a 403 "unknown license" answer (a key issued offline
+      with `license_tool.py`): nothing changes, no errors on screen
 - [ ] Renewed in the Control Center: the site shows the new end date within 15 minutes (or at once with *Check now*)
 
 **Verification:** tests against a local Control Center; manual.
