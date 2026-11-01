@@ -4,7 +4,7 @@ import {
   ThemeIcon, Title, Tooltip, useDirection,
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
-import { IconCamera, IconClipboardList, IconFlask, IconLock, IconLogout, IconTruck, IconVideo } from '@tabler/icons-react'
+import { IconCamera, IconClipboardList, IconFlask, IconLock, IconLogout, IconTruck, IconUsers, IconVideo } from '@tabler/icons-react'
 import { api, type Auth, type Lang, send, TextContext, type TextTable, useT } from './api'
 import type { Settings } from './pages/Cameras'
 import Cameras from './pages/Cameras'
@@ -14,12 +14,14 @@ import Login from './pages/Login'
 import Records from './pages/Records'
 import Setup, { setupSkipped } from './pages/Setup'
 import Test from './pages/Test'
+import Users from './pages/Users'
 
 const PAGES = [
   { key: 'live', icon: IconVideo },
   { key: 'records', icon: IconClipboardList },
   { key: 'cameras', icon: IconCamera },
   { key: 'test', icon: IconFlask },
+  { key: 'users', icon: IconUsers },  // admins only
 ] as const
 type Page = (typeof PAGES)[number]['key'] | 'setup' | 'license'  // not in the menu: opened on first run / with no license
 
@@ -154,7 +156,7 @@ function Shell({ languageSwitch, auth, onSignOut }: { languageSwitch: React.Reac
 
       <AppShell.Navbar p="sm">
         <Stack gap={4}>
-          {PAGES.map(({ key, icon: Icon }) => (
+          {PAGES.filter((p) => p.key !== 'users' || auth.role === 'admin').map(({ key, icon: Icon }) => (
             <NavLink
               key={key}
               href={`#${key}`}
@@ -176,7 +178,7 @@ function Shell({ languageSwitch, auth, onSignOut }: { languageSwitch: React.Reac
           <Title order={2}>{t(`nav_${page}`)}</Title>
           <Text c="dimmed">{t(`nav_${page}_help`)}</Text>
         </Stack>
-        {page === 'live' ? <Live /> : page === 'records' ? <Records /> : page === 'cameras' ? <Cameras /> : page === 'test' ? <Test /> : page === 'setup' ? <Setup /> : page === 'license' ? <LicensePage /> : (
+        {page === 'live' ? <Live /> : page === 'records' ? <Records /> : page === 'cameras' ? <Cameras /> : page === 'test' ? <Test /> : page === 'setup' ? <Setup /> : page === 'license' ? <LicensePage /> : page === 'users' && auth.role === 'admin' ? <Users /> : (
           <Paper withBorder p="xl" radius="lg">
             <Text c="dimmed">{t('coming_soon')}</Text>
           </Paper>

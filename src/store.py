@@ -22,17 +22,19 @@ LANE_FIELDS = {'lane': 'TEXT',
                'cams_expected': 'INTEGER',  # container cameras in the lane (2 = can be verified)
                'plate_source': 'TEXT',      # 'anpr' (the plate camera's own reading) or 'ocr'
                'snapshot2': 'TEXT'}         # the second container camera's photo
+ADDED_FIELDS = {**LANE_FIELDS, 'corrected_by': 'TEXT'}  # name of the user who fixed the reading
 FIELDS = ['date', 'time', 'direction', 'plate', 'plate_ar', 'plate_verified', 'container',
           'check_digit_ok', 'size_type', 'camera', 'location', 'confidence', 'snapshot',
-          'plate_image', 'corrected', *LANE_FIELDS]
-# Excel columns (same order as before) and how each value is shown
-COLUMNS = ['date', 'time', 'direction', 'plate', 'plate_ar', 'plate_check', 'container',
-           'check_digit', 'size_type', 'camera', 'location', 'confidence', 'snapshot', 'plate_image']
+          'plate_image', 'corrected', *ADDED_FIELDS]
+# Excel columns (same order as before, new ones last) and how each value is shown
+_BASE = ['date', 'time', 'direction', 'plate', 'plate_ar', 'plate_check', 'container',
+         'check_digit', 'size_type', 'camera', 'location', 'confidence', 'snapshot', 'plate_image']
+COLUMNS = _BASE + ['corrected_by']
 # a site with two container cameras in a lane gets two more: verified, and the second photo
-LANE_COLUMNS = COLUMNS[:8] + ['cams_verified'] + COLUMNS[8:] + ['snapshot2']
+LANE_COLUMNS = _BASE[:8] + ['cams_verified'] + _BASE[8:] + ['snapshot2', 'corrected_by']
 LINKS = ('snapshot', 'plate_image', 'snapshot2')
 WIDTHS = {'date': 11, 'time': 9, 'direction': 9, 'plate': 11, 'plate_ar': 14, 'plate_check': 20, 'container': 16,
-          'check_digit': 10, 'cams_verified': 20, 'size_type': 9, 'camera': 16, 'location': 18, 'confidence': 10}
+          'check_digit': 10, 'cams_verified': 20, 'corrected_by': 16, 'size_type': 9, 'camera': 16, 'location': 18, 'confidence': 10}
 
 SCHEMA = '''CREATE TABLE IF NOT EXISTS trucks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,7 +76,7 @@ class Store:
         self.db.execute('PRAGMA journal_mode=WAL')  # readers never block the writer
         self.db.executescript(SCHEMA)
         have = {r['name'] for r in self.db.execute('PRAGMA table_info(trucks)')}
-        for col, kind in LANE_FIELDS.items():  # an older database: add the new columns, keep every row
+        for col, kind in ADDED_FIELDS.items():  # an older database: add the new columns, keep every row
             if col not in have:
                 try:
                     self.db.execute(f'ALTER TABLE trucks ADD COLUMN {col} {kind}')
@@ -146,6 +148,18 @@ class Store:
             raise ValueError('password_hash must be a hash, not a password')
         with self.lock, self.db:
             self.db.execute('UPDATE users SET password_hash = ? WHERE id = ?', (password_hash, uid))
+
+    def update_user(self, uid, **fields):
+        """Change a user's name, role or active (other fields are ignored)."""
+        allowed = {k: v for k, v in fields.items() if k in ('name', 'role', 'active')}
+        if allowed:
+            with self.lock, self.db:
+                self.db.execute(f"UPDATE users SET {', '.join(f'{k} = ?' for k in allowed)} WHERE id = ?",
+                                [*allowed.values(), uid])
+
+    def users(self):
+        """Every user, oldest first, without the password hash."""
+        return [dict(r) for r in self.db.execute('SELECT id, username, name, role, active, created FROM users ORDER BY id')]
 
     def user(self, username=None, uid=None):
         """One user by username (any case) or id, as a dict, or None."""
@@ -227,7 +241,7 @@ def display(row, lang='en'):
         'cams_verified': '' if not row.get('container') or (row.get('cams_expected') or 0) < 2
         else t('cams_agreed', lang, n=row.get('cams_agree')) if cams_verified(row) else t('one_cam_only', lang),
         'snapshot': row.get('snapshot') or '', 'plate_image': row.get('plate_image') or '',
-        'snapshot2': row.get('snapshot2') or '',
+        'snapshot2': row.get('snapshot2') or '', 'corrected_by': row.get('corrected_by') or '',
     }
 
 

@@ -11,6 +11,7 @@ import hmac
 import secrets
 import shutil
 import socket
+import sqlite3
 import tempfile
 import threading
 import time
@@ -157,8 +158,9 @@ async def site_login(request: Request, call_next):
 
 @app.get('/api/auth')
 def auth(request: Request, store: Store = Depends(get_store)):
+    user = _user(store, request.cookies.get(COOKIE))
     return {'password_set': store.has_users(), 'local': _is_local(request),
-            'logged_in': _user(store, request.cookies.get(COOKIE)) is not None}
+            'logged_in': user is not None, 'role': user and user['role']}
 
 
 class Login(BaseModel):
@@ -217,6 +219,89 @@ def set_password(body: NewPassword, response: Response, user=Depends(need('viewe
         uid = store.add_user('admin', hash_password(body.new), 'admin', name='Admin')
     _log_in(response, store.user(uid=uid))
     return {'ok': True}
+
+
+# ---------- users (admin) ----------
+USERS_LIMIT = 5  # active users allowed; Task 24 takes it from the license
+UserRole = Literal['viewer', 'operator', 'admin']
+UserName = Annotated[str, StringConstraints(strip_whitespace=True, max_length=60)]
+
+
+class NewUser(BaseModel):
+    username: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+    name: UserName = ''
+    role: UserRole = 'operator'
+    password: str
+
+
+class UserChange(BaseModel):
+    name: UserName | None = None
+    role: UserRole | None = None
+    active: bool | None = None
+    password: str | None = None  # a new password: logs that user out everywhere
+
+
+def _users(store):
+    return {'users': store.users(), 'limit': USERS_LIMIT}
+
+
+def _room_for_one_more(store):
+    if sum(u['active'] for u in store.users()) >= USERS_LIMIT:
+        raise HTTPException(422, {'errors': ['users_limit']})
+
+
+def _check_new_password(password):
+    if len(password) < 6:
+        raise HTTPException(422, {'errors': ['short_password']})
+
+
+@app.get('/api/users', dependencies=[Depends(need('admin'))])
+def list_users(store: Store = Depends(get_store)):
+    """Every user (never a password hash) and how many may be active (`limit`)."""
+    return _users(store)
+
+
+_users_lock = threading.Lock()  # check and change in one step: two admins can't both remove the last admin
+
+
+@app.post('/api/users')
+def add_user(new: NewUser, me=Depends(need('admin')), store: Store = Depends(get_store)):
+    """Over the limit -> 422 users_limit; a username in use (any case) -> 409 username_taken.
+    The first user is always admin, made by choosing the password (PUT /api/password)."""
+    if me is None:
+        raise HTTPException(409, {'errors': ['no_password']})
+    _check_new_password(new.password)
+    with _users_lock:
+        _room_for_one_more(store)
+        try:
+            store.add_user(new.username, hash_password(new.password), new.role, name=new.name)
+        except sqlite3.IntegrityError:
+            raise HTTPException(409, {'errors': ['username_taken']}) from None
+    return _users(store)
+
+
+@app.patch('/api/users/{uid}')
+def change_user(uid: int, change: UserChange, response: Response, me=Depends(need('admin')),
+                store: Store = Depends(get_store)):
+    """Rename, change role, turn off/on, or reset the password. The last active admin can't be
+    turned off or lose the admin role (422 last_admin), so the site is never locked out."""
+    if change.password is not None:
+        _check_new_password(change.password)
+    with _users_lock:
+        user = store.user(uid=uid)
+        if not user:
+            raise HTTPException(404)
+        if change.active and not user['active']:
+            _room_for_one_more(store)
+        if user['role'] == 'admin' and user['active'] and (change.active is False or change.role not in (None, 'admin')):
+            if sum(u['role'] == 'admin' and u['active'] for u in store.users()) == 1:
+                raise HTTPException(422, {'errors': ['last_admin']})
+        if change.password is not None:
+            store.set_user_password(uid, hash_password(change.password))
+            if me and me['id'] == uid:  # their own new password: stay signed in on this device
+                _log_in(response, store.user(uid=uid))
+        store.update_user(uid, **change.model_dump(exclude_none=True, exclude={'password'}))
+    return _users(store)
 
 
 @app.get('/api/health')
@@ -753,8 +838,8 @@ class Fix(BaseModel):
     direction: Literal['IN', 'OUT']
 
 
-@app.patch('/api/records/{rid}', dependencies=[Depends(need('operator'))])
-def fix_record(rid: int, fix: Fix, store: Store = Depends(get_store)):
+@app.patch('/api/records/{rid}')
+def fix_record(rid: int, fix: Fix, user=Depends(need('operator')), store: Store = Depends(get_store)):
     """A person corrects a reading. Bad input -> 422 {'detail': {'errors': [text keys]}}.
     Saved -> the updated row, and warning 'check_digit_wrong' if the container's check digit
     doesn't match (saved anyway)."""
@@ -764,7 +849,7 @@ def fix_record(rid: int, fix: Fix, store: Store = Depends(get_store)):
     fields, errors = parse_fix(fix.plate, fix.container, fix.direction)
     if errors:
         raise HTTPException(422, {'errors': errors})
-    config.save_fix(store, row, fields)
+    config.save_fix(store, row, fields, by=user and (user['name'] or user['username']))  # None before users exist
     return {'row': _public(store.get(rid)), 'warning': 'check_digit_wrong' if fields['check_digit_ok'] == 0 else None}
 
 

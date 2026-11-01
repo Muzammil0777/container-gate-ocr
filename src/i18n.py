@@ -20,6 +20,7 @@ TEXT = {
     'plate_image': ('Plate Image', 'صورة اللوحة'),
     'cams_verified': ('Container cameras', 'كاميرات الحاوية'),
     'snapshot2': ('Snapshot (2nd camera)', 'الصورة (الكاميرا الثانية)'),
+    'corrected_by': ('Fixed by', 'صحّحه'),
     # Excel values
     'IN': ('IN', 'دخول'),
     'OUT': ('OUT', 'خروج'),
@@ -395,6 +396,33 @@ TEXT = {
     'choose_password': ('Choose a password', 'اختيار كلمة مرور'),
     'step_password': ('Password', 'كلمة المرور'),
     'step_password_help': ('Protect this site', 'حماية هذا الموقع'),
+    # Web app: users (admin)
+    'nav_users': ('Users', 'المستخدمون'),
+    'nav_users_help': ('Who can sign in, and what they can do', 'من يمكنه تسجيل الدخول، وماذا يمكنه أن يفعل'),
+    'users_count': ('Users {n} of {m}', 'المستخدمون {n} من {m}'),
+    'help_users_count': ('Only users that are turned on count. Turn a user off to free a place.',
+                         'يُحتسب المستخدمون المفعّلون فقط. أوقف مستخدماً لتحرير مكان.'),
+    'users_limit': ('Your license allows {n} users. Contact us to add 5 more.',
+                    'يسمح ترخيصك بـ {n} مستخدمين. تواصل معنا لإضافة 5 آخرين.'),
+    'last_admin': ('This is the only admin. Make another user an admin first.',
+                   'هذا هو المسؤول الوحيد. اجعل مستخدماً آخر مسؤولاً أولاً.'),
+    'username_taken': ('This username is already used. Choose another one.',
+                       'اسم المستخدم هذا مستخدم بالفعل. اختر اسماً آخر.'),
+    'add_user': ('Add a user', 'إضافة مستخدم'),
+    'full_name': ('Name', 'الاسم'),
+    'user_role': ('Can do', 'الصلاحية'),
+    'help_user_role': ('View: see records and download Excel. Operate: also watch the cameras and fix readings. '
+                       'Admin: also change settings, cameras, users and the license.',
+                       'عرض: رؤية السجلات وتنزيل Excel. تشغيل: أيضاً مشاهدة الكاميرات وتصحيح القراءات. '
+                       'مسؤول: أيضاً تغيير الإعدادات والكاميرات والمستخدمين والترخيص.'),
+    'user_role_viewer': ('View', 'عرض'),
+    'user_role_operator': ('Operate', 'تشغيل'),
+    'user_role_admin': ('Admin', 'مسؤول'),
+    'user_on': ('Can sign in', 'يمكنه الدخول'),
+    'user_off': ('Turned off', 'موقوف'),
+    'reset_password': ('New password', 'كلمة مرور جديدة'),
+    'reset_password_help': ('Give this user a new password. They must sign in again on every device.',
+                            'أعطِ هذا المستخدم كلمة مرور جديدة. يجب عليه تسجيل الدخول مجدداً على كل جهاز.'),
 }
 
 

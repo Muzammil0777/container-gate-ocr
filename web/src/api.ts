@@ -13,8 +13,8 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json()
 }
 
-/** /api/auth: is a site password set, is this the gate computer, is this device signed in. */
-export type Auth = { password_set: boolean; local: boolean; logged_in: boolean }
+/** /api/auth: is a site password set, is this the gate computer, is this device signed in, and as what. */
+export type Auth = { password_set: boolean; local: boolean; logged_in: boolean; role?: 'viewer' | 'operator' | 'admin' | null }
 
 /** The current picture of an NVR channel, as an object URL (throws ApiError with a text key). */
 export async function cameraPicture(channel: number): Promise<string> {
@@ -71,5 +71,5 @@ export type Truck = {
   plate: string | null; plate_ar: string | null; plate_verified: number | null
   container: string | null; check_digit_ok: number | null; size_type: string | null
   camera: string | null; location: string | null; confidence: number | null
-  corrected: number; needs_review: boolean; snapshot: boolean; plate_image: boolean
+  corrected: number; corrected_by: string | null; needs_review: boolean; snapshot: boolean; plate_image: boolean
 }

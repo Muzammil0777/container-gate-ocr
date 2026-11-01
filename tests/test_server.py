@@ -413,7 +413,7 @@ def test_without_password_only_the_gate_computer_can_use_the_api():
     assert phone.get('/api/settings').status_code == 403
     assert phone.get('/api/settings').json()['detail'] == {'errors': ['local_only']}
     assert phone.get('/api/text').status_code == 200                                     # still loads the page
-    assert phone.get('/api/auth').json() == {'password_set': False, 'local': False, 'logged_in': False}
+    assert phone.get('/api/auth').json() == {'password_set': False, 'local': False, 'logged_in': False, 'role': None}
     assert phone.put('/api/password', json={'new': 'gate1234'}).status_code == 403       # can't claim the site
     assert client.get('/api/settings').status_code == 200
 
@@ -486,7 +486,7 @@ def test_roles(site, monkeypatch):
     assert viewer.get('/api/settings').status_code == 403
     assert viewer.put('/api/settings', json={}).status_code == 403
     assert viewer.post('/api/service/start').status_code == 403
-    assert operator.patch(f'/api/records/{rid}', json=fix).status_code == 200
+    assert operator.patch(f'/api/records/{rid}', json=fix).json()['row']['corrected_by'] == 'omar'  # who fixed it
     assert operator.get('/api/settings').status_code == 403
     assert operator.post('/api/license', json={'key': 'x'}).status_code == 403
     assert admin.get('/api/settings').status_code == 200
@@ -506,6 +506,69 @@ def test_disabled_user_is_logged_out_at_once(site, monkeypatch):
     assert r.status_code == 403 and r.json()['detail'] == {'errors': ['user_disabled']}
     r = device.post('/api/login', json={'username': 'nobody', 'password': 'pw123456'})
     assert r.status_code == 401 and r.json()['detail'] == {'errors': ['wrong_login']}   # same as a wrong password
+
+
+def test_users_page_rules(site, monkeypatch):
+    monkeypatch.setattr(time, 'sleep', lambda s: None)
+    _, store = site
+    admin = _signed_in(store, 'boss', 'admin', '192.168.1.62')
+    assert admin.get('/api/auth').json()['role'] == 'admin'
+    boss = store.user('boss')['id']
+    r = admin.get('/api/users').json()
+    assert r['limit'] == server.USERS_LIMIT and [u['username'] for u in r['users']] == ['boss']
+    assert 'password_hash' not in r['users'][0]
+
+    # the last active admin can't be turned off or demoted
+    for change in ({'active': False}, {'role': 'operator'}):
+        r = admin.patch(f'/api/users/{boss}', json=change)
+        assert r.status_code == 422 and r.json()['detail'] == {'errors': ['last_admin']}
+    assert store.user('boss')['role'] == 'admin' and store.user('boss')['active'] == 1
+
+    r = admin.post('/api/users', json={'username': 'omar', 'name': 'Omar', 'role': 'operator', 'password': 'pw654321'})
+    assert r.status_code == 200 and r.json()['users'][1]['name'] == 'Omar'
+    assert admin.post('/api/users', json={'username': 'OMAR', 'password': 'pw654321'}).json()['detail'] == {'errors': ['username_taken']}
+    assert admin.post('/api/users', json={'username': 'x', 'password': '123'}).json()['detail'] == {'errors': ['short_password']}
+    omar = store.user('omar')['id']
+    phone = TestClient(app, client=('192.168.1.63', 40000))
+    assert phone.post('/api/login', json={'username': 'omar', 'password': 'pw654321'}).status_code == 200
+    assert phone.get('/api/users').status_code == 403                                       # operators can't
+
+    # reset password: the old one stops working and omar's devices are logged out
+    assert admin.patch(f'/api/users/{omar}', json={'password': 'new54321'}).status_code == 200
+    assert phone.get('/api/records?day=2026-10-17').status_code == 401
+    assert phone.post('/api/login', json={'username': 'omar', 'password': 'new54321'}).status_code == 200
+
+    # a second admin: now the first one can be demoted, but not the (new) last one
+    assert admin.patch(f'/api/users/{omar}', json={'role': 'admin'}).status_code == 200
+    assert admin.patch(f'/api/users/{boss}', json={'role': 'viewer'}).status_code == 200
+    assert admin.get('/api/users').status_code == 403                                       # boss is a viewer now
+    assert phone.patch(f'/api/users/{omar}', json={'active': False}).json()['detail'] == {'errors': ['last_admin']}
+    assert phone.patch(f'/api/users/{boss}', json={'active': False, 'name': 'Old boss'}).status_code == 200
+    assert store.user('boss')['name'] == 'Old boss' and not store.user('boss')['active']
+    assert phone.patch('/api/users/999', json={'active': False}).status_code == 404
+    assert phone.patch(f'/api/users/{omar}', json={'password': 'self4321'}).status_code == 200  # own password:
+    assert phone.get('/api/users').status_code == 200                                          # still signed in
+
+
+def test_first_user_is_made_by_choosing_the_password():
+    r = client.post('/api/users', json={'username': 'sara', 'role': 'viewer', 'password': 'pw654321'})
+    assert r.status_code == 409 and r.json()['detail'] == {'errors': ['no_password']}
+    assert not app.dependency_overrides[get_store]().has_users()
+
+
+def test_users_limit(site, monkeypatch):
+    monkeypatch.setattr(time, 'sleep', lambda s: None)
+    monkeypatch.setattr(server, 'USERS_LIMIT', 2)
+    _, store = site
+    admin = _signed_in(store, 'boss', 'admin', '192.168.1.62')
+    assert admin.post('/api/users', json={'username': 'sara', 'role': 'viewer', 'password': 'pw654321'}).status_code == 200
+    r = admin.post('/api/users', json={'username': 'omar', 'password': 'pw654321'})
+    assert r.status_code == 422 and r.json()['detail'] == {'errors': ['users_limit']}
+    sara = store.user('sara')['id']
+    assert admin.patch(f'/api/users/{sara}', json={'active': False}).status_code == 200      # a turned-off user frees a place
+    assert admin.post('/api/users', json={'username': 'omar', 'password': 'pw654321'}).status_code == 200
+    r = admin.patch(f'/api/users/{sara}', json={'active': True})                             # turning her back on is over it
+    assert r.status_code == 422 and r.json()['detail'] == {'errors': ['users_limit']}
 
 
 def test_old_site_signs_in_as_admin_with_its_old_password(site, monkeypatch):
