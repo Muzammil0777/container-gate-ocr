@@ -1,0 +1,17 @@
+{
+  "about": "A key made by gate-reader-control license_tool.py with its test key pair. Both repos test against it, so the key format cannot drift.",
+  "public_keys": {
+    "bc66f46f": "c14f995cfc48ae1c0e99a0c2840d6ff6b9677c7d9818ba2ecc74d10612f33926"
+  },
+  "machine": "EGUO-U43Q-FCUY",
+  "payload": {
+    "lid": "L-0001",
+    "customer": "Port Co",
+    "site": "Jeddah gate",
+    "machine": "EGUO-U43Q-FCUY",
+    "issued": "2026-11-01",
+    "expires": "2027-11-01",
+    "cameras": 4
+  },
+  "key": "GATE1.eyJjYW1lcmFzIjo0LCJjdXN0b21lciI6IlBvcnQgQ28iLCJleHBpcmVzIjoiMjAyNy0xMS0wMSIsImlzc3VlZCI6IjIwMjYtMTEtMDEiLCJraWQiOiJiYzY2ZjQ2ZiIsImxpZCI6IkwtMDAwMSIsIm1hY2hpbmUiOiJFR1VPLVU0M1EtRkNVWSIsInNpdGUiOiJKZWRkYWggZ2F0ZSJ9.Nrm5-hp_FS6IvPo42VSSjKQvEDLTItvGyfHrRxFaTpAkkbnCFuCXsFaHPpqnjIfJpX8G1JrKPsePxDMjZBg-Bg"
+}
