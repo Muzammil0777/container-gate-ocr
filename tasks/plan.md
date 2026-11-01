@@ -252,14 +252,14 @@ Task numbers stay as first planned.
 ### Phase 3: App
 - [x] Task 8: Cameras page: lanes and what each camera reads; Live grouped by lane
 - [x] Task 9: Records and Excel: "Verified by 2 cameras", every camera's photo
-- [ ] Task 10: Setup wizard: second container camera and plate camera
+- [x] Task 10: Setup wizard: second container camera and plate camera
 
 ### Checkpoint: Lanes complete
 
 ### Phase 4: License in the app
 - [x] Task 11: License check: signed key, machine code, states, clock guard (test-driven)
-- [ ] Task 12: Your license tool: make keys, issue and inspect licenses (creates the Control Center repo)
-- [ ] Task 13: Activation screen, License card, expiry banners
+- [x] Task 12: Your license tool: make keys, issue and inspect licenses (creates the Control Center repo)
+- [x] Task 13: Activation screen, License card, expiry banners
 - [ ] Task 14: After the grace period: detection stops, data stays available
 
 ### Checkpoint: Licensing works offline
