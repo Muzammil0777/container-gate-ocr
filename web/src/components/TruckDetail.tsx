@@ -22,6 +22,7 @@ export default function TruckDetail({ row, onSaved }: { row: Truck; onSaved: () 
     ['size_type', row.size_type],
     ['camera', row.camera],
     ['location', row.location],
+    ...(row.corrected_by ? [['corrected_by', row.corrected_by] as [string, string]] : []),  // older fixes: nothing
   ]
   return (
     <Stack gap="lg">

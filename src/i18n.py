@@ -20,6 +20,7 @@ TEXT = {
     'plate_image': ('Plate Image', 'صورة اللوحة'),
     'cams_verified': ('Container cameras', 'كاميرات الحاوية'),
     'snapshot2': ('Snapshot (2nd camera)', 'الصورة (الكاميرا الثانية)'),
+    'corrected_by': ('Fixed by', 'صحّحه'),
     # Excel values
     'IN': ('IN', 'دخول'),
     'OUT': ('OUT', 'خروج'),

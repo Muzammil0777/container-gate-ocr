@@ -838,8 +838,8 @@ class Fix(BaseModel):
     direction: Literal['IN', 'OUT']
 
 
-@app.patch('/api/records/{rid}', dependencies=[Depends(need('operator'))])
-def fix_record(rid: int, fix: Fix, store: Store = Depends(get_store)):
+@app.patch('/api/records/{rid}')
+def fix_record(rid: int, fix: Fix, user=Depends(need('operator')), store: Store = Depends(get_store)):
     """A person corrects a reading. Bad input -> 422 {'detail': {'errors': [text keys]}}.
     Saved -> the updated row, and warning 'check_digit_wrong' if the container's check digit
     doesn't match (saved anyway)."""
@@ -849,7 +849,7 @@ def fix_record(rid: int, fix: Fix, store: Store = Depends(get_store)):
     fields, errors = parse_fix(fix.plate, fix.container, fix.direction)
     if errors:
         raise HTTPException(422, {'errors': errors})
-    config.save_fix(store, row, fields)
+    config.save_fix(store, row, fields, by=user and (user['name'] or user['username']))  # None before users exist
     return {'row': _public(store.get(rid)), 'warning': 'check_digit_wrong' if fields['check_digit_ok'] == 0 else None}
 
 

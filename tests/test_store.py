@@ -30,7 +30,8 @@ def test_older_database_is_upgraded_and_keeps_its_rows(tmp_path):
                    "('2026-10-18', '08:00:00', 'OUT', '5188 VDA', 'C:/snaps/a.jpg')")
     store = Store(str(path))
     [old] = store.day('2026-10-18')
-    assert (old['plate'], old['snapshot'], old['lane'], old['cams_agree']) == ('5188 VDA', 'C:/snaps/a.jpg', None, None)
+    assert (old['plate'], old['snapshot'], old['lane'], old['cams_agree'], old['corrected_by']) == \
+        ('5188 VDA', 'C:/snaps/a.jpg', None, None, None)
     _, rid = store.add({**ROW, 'lane': 'Entry', 'cams_agree': 2, 'cams_expected': 2, 'plate_source': 'anpr',
                         'snapshot2': 'C:/snaps/b.jpg'})
     new = store.get(rid)
@@ -53,7 +54,7 @@ def test_two_camera_lanes_get_verified_and_second_photo_columns(tmp_path):
     assert head == [t(c, 'en') for c in LANE_COLUMNS]
     col = head.index('Container cameras')
     assert [ws.cell(row=r, column=col + 1).value for r in (2, 3, 4)] == ['Verified by 2 cameras', '1 camera only', None]
-    assert ws.cell(row=2, column=len(head)).hyperlink.target == str(snap2)
+    assert ws.cell(row=2, column=head.index('Snapshot (2nd camera)') + 1).hyperlink.target == str(snap2)
     ar = load_workbook(io.BytesIO(to_excel(rows, 'ar'))).active
     assert ar.cell(row=3, column=col + 1).value == 'كاميرا واحدة فقط'
 

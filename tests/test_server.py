@@ -486,7 +486,7 @@ def test_roles(site, monkeypatch):
     assert viewer.get('/api/settings').status_code == 403
     assert viewer.put('/api/settings', json={}).status_code == 403
     assert viewer.post('/api/service/start').status_code == 403
-    assert operator.patch(f'/api/records/{rid}', json=fix).status_code == 200
+    assert operator.patch(f'/api/records/{rid}', json=fix).json()['row']['corrected_by'] == 'omar'  # who fixed it
     assert operator.get('/api/settings').status_code == 403
     assert operator.post('/api/license', json={'key': 'x'}).status_code == 403
     assert admin.get('/api/settings').status_code == 200

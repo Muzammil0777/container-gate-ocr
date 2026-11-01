@@ -71,5 +71,5 @@ export type Truck = {
   plate: string | null; plate_ar: string | null; plate_verified: number | null
   container: string | null; check_digit_ok: number | null; size_type: string | null
   camera: string | null; location: string | null; confidence: number | null
-  corrected: number; needs_review: boolean; snapshot: boolean; plate_image: boolean
+  corrected: number; corrected_by: string | null; needs_review: boolean; snapshot: boolean; plate_image: boolean
 }

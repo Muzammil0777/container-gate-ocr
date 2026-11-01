@@ -61,15 +61,15 @@ def grab_frame(source):
     return frame
 
 
-def save_fix(store, row, fix):
-    """Save a person's correction of a stored row (fields from store.parse_fix): update the
-    database, rewrite that day's and month's Excel files, and keep a before/after record in
-    logs/corrections.jsonl for improving accuracy later."""
-    store.correct(row['id'], **fix)
+def save_fix(store, row, fix, by=None):
+    """Save a person's correction of a stored row (fields from store.parse_fix; `by`: the
+    user's name): update the database, rewrite that day's and month's Excel files, and keep a
+    before/after record in logs/corrections.jsonl for improving accuracy later."""
+    store.correct(row['id'], **fix, corrected_by=by)
     gl = GateLog(store, DEFAULTS['snapshots'], ROOT / DEFAULTS['excel_dir'], load_config().get('language', 'en'))
     gl.changed(row['date'])
     gl.flush()
     (ROOT / 'logs').mkdir(exist_ok=True)
     with open(ROOT / 'logs' / 'corrections.jsonl', 'a', encoding='utf-8') as f:
         f.write(json.dumps({'id': row['id'], 'before': {k: row.get(k) for k in fix}, 'after': fix,
-                            'snapshot': row.get('snapshot')}, ensure_ascii=False) + '\n')
+                            'snapshot': row.get('snapshot'), 'by': by}, ensure_ascii=False) + '\n')

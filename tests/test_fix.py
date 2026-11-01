@@ -42,3 +42,21 @@ def test_save_fix_updates_db_excel_and_log(tmp_path, monkeypatch):
         ['gate_log_2026-10-17.xlsx', 'gate_log_2026-10.xlsx']
     entry = json.loads((tmp_path / 'logs' / 'corrections.jsonl').read_text(encoding='utf-8'))
     assert entry['before']['plate'] == '231 UTA' and entry['after']['plate'] == '3231 UTA'
+
+
+def test_who_fixed_it_is_saved_in_db_log_and_excel(tmp_path, monkeypatch):
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+    monkeypatch.setattr(src.config, 'ROOT', tmp_path)
+    monkeypatch.setattr(src.config, 'CONFIG', tmp_path / 'cameras.json')
+    store = Store(str(tmp_path / 'gate.db'))
+    _, old = store.add({'date': '2026-10-17', 'time': '09:00:00', 'direction': 'IN', 'plate': '1111 AAA'})
+    store.correct(old, plate='1112 AAA')                                     # a fix from before Task 23
+    _, rid = store.add({'date': '2026-10-17', 'time': '10:00:00', 'direction': 'IN', 'plate': '231 UTA'})
+    src.config.save_fix(store, store.get(rid), parse_fix('3231 UTA', '', 'IN')[0], by='Omar Ali')
+    assert store.get(rid)['corrected_by'] == 'Omar Ali' and store.get(old)['corrected_by'] is None
+    assert json.loads((tmp_path / 'logs' / 'corrections.jsonl').read_text(encoding='utf-8'))['by'] == 'Omar Ali'
+    ws = load_workbook(BytesIO((tmp_path / 'logs' / 'excel' / 'gate_log_2026-10-17.xlsx').read_bytes())).active
+    col = [c.value for c in ws[1]].index('Fixed by') + 1
+    assert [ws.cell(row=r, column=col).value for r in (2, 3)] == [None, 'Omar Ali']

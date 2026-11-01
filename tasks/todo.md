@@ -349,12 +349,12 @@ license, Task 24; 5 until then). Plain text for staff, en/ar.
 **Verification:** browser check en/ar; tests for the API rules. Build and commit `web/dist`.
 **Dependencies:** Task 21. **Files:** `web/src/pages/Users.tsx`, `server.py`, `src/i18n.py`. **Scope:** M
 
-### Task 23: Who fixed a reading
+### Task 23: Who fixed a reading ✅
 **Description:** `corrected_by` column (additive), saved by `save_fix`, shown in the truck
 detail and as an Excel column; also written to `logs/corrections.jsonl`.
 
 **Acceptance criteria:**
-- [ ] Old rows show nothing; new fixes show the user's name
+- [x] Old rows show nothing; new fixes show the user's name
 **Verification:** tests. **Dependencies:** Task 21. **Files:** `src/store.py`, `src/config.py`, `web/src/components/TruckDetail.tsx`. **Scope:** S
 
 ---
