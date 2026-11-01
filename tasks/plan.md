@@ -267,8 +267,8 @@ Task numbers stay as first planned.
 ### Phase 5: Named users and seats
 - [x] Task 20: Users table, upgrade from the site password
 - [x] Task 21: Login by username, roles checked on every API route
-- [ ] Task 22: Users page (admin)
-- [ ] Task 23: Who fixed a reading (`corrected_by`)
+- [x] Task 22: Users page (admin)
+- [x] Task 23: Who fixed a reading (`corrected_by`)
 
 ### Phase 6: License with edition, users, lanes
 - [ ] Task 24: New license fields, user and lane limits enforced
@@ -286,7 +286,7 @@ Task numbers stay as first planned.
 ### Phase 8: Control Center (your dashboard for every client)
 - [x] Task 15: Control Center server: clients, contracts, licenses, check-in, 2FA login
 - [ ] Task 16: App heartbeat every 15 minutes, picks up renewals
-- [ ] Task 40: Control Center pages: Clients, Renewals, Health, Versions
+- [x] Task 40: Control Center pages: Clients, Renewals, Health, Versions
 - [ ] Task 41: Alerts to you by email
 - [ ] Task 42: Versions and releases (`VERSION`, `CHANGELOG.md`)
 - [ ] Task 17: Put the Control Center online (HTTPS) and renew a site remotely

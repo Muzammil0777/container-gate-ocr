@@ -464,7 +464,7 @@ The License card shows the last check-in and a *Check now* button.
 **Verification:** tests against a local Control Center; manual.
 **Dependencies:** Tasks 14, 15. **Files:** `src/checkin.py`, `src/license.py`, `server.py`, `web/src/pages/License.tsx`, `src/i18n.py`. **Scope:** M
 
-### Task 40: Control Center app (pages)
+### Task 40: Control Center app (pages) ✅
 **Description:** `web/` in the Control Center repo (its own small React app, English only: it is your tool, not the
 customer's). Pages: **Clients** (sites, edition, users and lanes bought, contract end);
 **Client** (each site's deployments, licenses issued, health over time, notes); **Renewals**
@@ -473,8 +473,8 @@ the next check-in, also copyable for sites with no internet); **Health** (every 
 amber / red: silent, cameras down, disk low, license ending); **Versions** (who runs what, latest release).
 
 **Acceptance criteria:**
-- [ ] A renewal is done in one place: pick the client, set the new end date, the site picks it up
-- [ ] A site silent for over 2 hours shows red with when it was last seen
+- [x] A renewal is done in one place: pick the client, set the new end date, the site picks it up
+- [x] A site silent for over 2 hours shows red with when it was last seen
 
 **Verification:** browser check against a local Control Center with 3 fake deployments sending heartbeats.
 **Dependencies:** Task 15. **Files:** Control Center repo: `web/`, `app.py`. **Scope:** L
