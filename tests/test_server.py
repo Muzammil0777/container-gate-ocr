@@ -57,6 +57,7 @@ def site(tmp_path, monkeypatch):
                                     {'name': 'Old', 'enabled': False}]})
     store = Store(str(tmp_path / 'gate.db'))
     app.dependency_overrides[get_store] = lambda: store
+    monkeypatch.setattr(server.license, 'TRIAL_LANES', None)  # lane tests run in the trial; limits: test_lanes_limit
     yield tmp_path, store
     app.dependency_overrides.clear()
 
@@ -515,7 +516,7 @@ def test_users_page_rules(site, monkeypatch):
     assert admin.get('/api/auth').json()['role'] == 'admin'
     boss = store.user('boss')['id']
     r = admin.get('/api/users').json()
-    assert r['limit'] == server.USERS_LIMIT and [u['username'] for u in r['users']] == ['boss']
+    assert r['limit'] == server.license.USERS and [u['username'] for u in r['users']] == ['boss']
     assert 'password_hash' not in r['users'][0]
 
     # the last active admin can't be turned off or demoted
@@ -556,10 +557,10 @@ def test_first_user_is_made_by_choosing_the_password():
     assert not app.dependency_overrides[get_store]().has_users()
 
 
-def test_users_limit(site, monkeypatch):
+def test_users_limit(licensed, monkeypatch):
     monkeypatch.setattr(time, 'sleep', lambda s: None)
-    monkeypatch.setattr(server, 'USERS_LIMIT', 2)
-    _, store = site
+    _, make, store = licensed
+    store.meta_set('license_key', make(users=2))
     admin = _signed_in(store, 'boss', 'admin', '192.168.1.62')
     assert admin.post('/api/users', json={'username': 'sara', 'role': 'viewer', 'password': 'pw654321'}).status_code == 200
     r = admin.post('/api/users', json={'username': 'omar', 'password': 'pw654321'})
@@ -603,9 +604,9 @@ def licensed(site, monkeypatch):
     monkeypatch.setattr(lic, '_machine_guid', lambda: 'test-machine')
     here = lic.machine_code('test-machine')
 
-    def make(machine=here, expires='2099-01-01'):
+    def make(machine=here, expires='2099-01-01', **extra):
         return lic.make_key({'lid': 'L-1', 'customer': 'Port Co', 'site': 'Jeddah', 'machine': machine,
-                             'expires': expires}, raw, 't1')
+                             'expires': expires, **extra}, raw, 't1')
     return here, make, site[1]
 
 
@@ -635,10 +636,31 @@ def test_wrong_keys_are_refused_with_a_reason_and_keep_the_saved_key(licensed, w
     assert client.get('/api/license').json()['state'] == 'active'
 
 
+def test_lanes_limit(licensed):
+    _, make, store = licensed
+    store.meta_set('license_key', make(lanes=2))                 # the site's two cameras work alone: 2 lanes
+    r = client.post('/api/cameras', json={'name': 'Gate 3', 'channel': 3})
+    assert r.status_code == 422 and r.json()['detail'] == {'errors': ['lanes_limit']}
+    assert client.patch('/api/cameras/Old', json={'enabled': True}).status_code == 422      # switching one on: a third
+    assert client.post('/api/lanes', json={'name': 'Entry'}).status_code == 200            # an empty lane runs nothing
+    assert client.patch('/api/cameras/Gate 1', json={'lane': 'Entry'}).status_code == 200  # still 2 lanes
+    assert client.post('/api/cameras', json={'name': 'Rear', 'channel': 4, 'lane': 'Entry'}).status_code == 200
+    assert client.post('/api/lanes', json={'name': 'Exit'}).status_code == 200
+    r = client.post('/api/lanes', json={'name': 'Third'})
+    assert r.status_code == 422 and r.json()['detail'] == {'errors': ['lanes_limit']}
+    assert client.post('/api/lanes', json={'name': 'Exit', 'direction': 'OUT'}).status_code == 200  # changing one is fine
+    r = client.delete('/api/lanes/Entry')                         # its 2 cameras would each work alone: 3 lanes
+    assert r.status_code == 422 and r.json()['detail'] == {'errors': ['lanes_limit']}
+    store.meta_set('license_key', make(lanes=1))                 # a smaller key removes nothing...
+    assert len(config.load_config()['lanes']) == 2 and len(config.load_config()['cameras']) == 4
+    assert client.patch('/api/cameras/Gate 2', json={'enabled': False}).status_code == 200  # ...and fewer is fine
+    assert client.get('/api/license').json()['lanes'] == 1
+
+
 def test_license_texts_exist_in_both_languages():
     for k in ('license_bad_format', 'license_unknown_signer', 'license_bad_signature', 'license_other_machine',
               'license_key_expired', 'license_banner_expiring', 'license_banner_grace', 'license_banner_expired',
-              'license_banner_unlicensed', 'license_contact'):
+              'license_banner_unlicensed', 'license_contact', 'lanes_limit'):
         assert all(TEXT[k]), k
 
 

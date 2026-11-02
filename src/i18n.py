@@ -297,6 +297,8 @@ TEXT = {
     'lane_direction_help': ('Do trucks come in or go out through this lane?', 'هل تدخل الشاحنات أم تخرج عبر هذا المسار؟'),
     'save_lane': ('Save lane', 'حفظ المسار'),
     'lane_cameras': ('Cameras: {n}', 'الكاميرات: {n}'),
+    'lanes_limit': ("Your license doesn't allow more lanes. Contact us to add more.",
+                    'لا يسمح ترخيصك بمسارات أكثر. تواصل معنا لإضافة المزيد.'),
     'lane_delete_confirm': ('Delete lane "{name}"? Its cameras stay, and each works on its own again.',
                             'حذف المسار "{name}"؟ تبقى كاميراته، وتعمل كل منها وحدها من جديد.'),
     'lane': ('Lane', 'المسار'),

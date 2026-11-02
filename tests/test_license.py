@@ -100,6 +100,23 @@ def test_check_uses_the_stored_key_and_starts_the_trial_once(tmp_path):
     assert lic.check(store, HERE, KEYS, now + timedelta(days=3))['key_error'] in ('license_bad_signature', 'license_bad_format')
 
 
+def test_limits_from_the_key_old_keys_and_the_trial():
+    assert lic.limits(None) == {'edition': 'site', 'users': 5, 'lanes': 2}                  # trial
+    assert lic.limits({'expires': '2027-10-19'}) == {'edition': 'site', 'users': 5, 'lanes': None}  # old key: lanes as today
+    assert lic.limits({'edition': 'enterprise', 'users': 10, 'lanes': 3}) == {'edition': 'enterprise', 'users': 10, 'lanes': 3}
+
+
+def test_check_gives_the_limits_and_old_keys_still_work(tmp_path):
+    store = Store(str(tmp_path / 'gate.db'))
+    store.meta_set('license_key', key(edition='enterprise', users=10, lanes=3))
+    got = lic.check(store, HERE, KEYS)
+    assert (got['state'], got['edition'], got['users'], got['lanes']) == ('active', 'enterprise', 10, 3)
+    store.meta_set('license_key', key())  # a key from the Task 12 tool, without the new fields
+    got = lic.check(store, HERE, KEYS)
+    assert (got['state'], got['edition'], got['users'], got['lanes']) == ('active', 'site', 5, None)
+    assert lic.check(Store(str(tmp_path / 'new.db')), HERE, KEYS)['lanes'] == 2         # trial
+
+
 def test_setting_the_clock_back_does_not_extend_anything(tmp_path):
     store = Store(str(tmp_path / 'gate.db'))
     store.meta_set('license_key', key(expires='2026-12-31'))

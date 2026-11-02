@@ -39,7 +39,7 @@ from src.camera import hikvision_url, port_open, redact
 from src.gate import GateLog, GateTracker
 from src.i18n import LANGUAGES, TEXT
 from src.iso6346 import format_code
-from src.lanes import lane_problems
+from src.lanes import lane_problems, lanes as running_lanes
 from src.recognizer import Recognizer, draw
 from src.store import LINKS, ROLES, Store, needs_review, parse_fix, to_excel, to_zip
 
@@ -222,7 +222,6 @@ def set_password(body: NewPassword, response: Response, user=Depends(need('viewe
 
 
 # ---------- users (admin) ----------
-USERS_LIMIT = 5  # active users allowed; Task 24 takes it from the license
 UserRole = Literal['viewer', 'operator', 'admin']
 UserName = Annotated[str, StringConstraints(strip_whitespace=True, max_length=60)]
 
@@ -242,11 +241,11 @@ class UserChange(BaseModel):
 
 
 def _users(store):
-    return {'users': store.users(), 'limit': USERS_LIMIT}
+    return {'users': store.users(), 'limit': license.check(store)['users']}
 
 
 def _room_for_one_more(store):
-    if sum(u['active'] for u in store.users()) >= USERS_LIMIT:
+    if sum(u['active'] for u in store.users()) >= license.check(store)['users']:
         raise HTTPException(422, {'errors': ['users_limit']})
 
 
@@ -461,6 +460,15 @@ def _set_lane(cfg, cam, lane, role):
         cam.update(lane=lane, role=role or cam.get('role', 'both'))
 
 
+def _lanes_fit(store, cfg):
+    """Refuse (422 lanes_limit) camera settings that would run more lanes than the license allows
+    (each lane, and each camera working alone). A site already over it (a smaller key) keeps its
+    lanes but can't add one."""
+    limit, n = license.check(store)['lanes'], len(running_lanes(cfg))
+    if limit is not None and n > limit and n > len(running_lanes(config.load_config())):
+        raise HTTPException(422, {'errors': ['lanes_limit']})
+
+
 class CameraChange(BaseModel):
     enabled: bool | None = None
     lane: str | None = None  # '': no lane
@@ -468,7 +476,7 @@ class CameraChange(BaseModel):
 
 
 @app.patch('/api/cameras/{name}', dependencies=[Depends(need('admin'))])
-def change_camera(name: str, change: CameraChange):
+def change_camera(name: str, change: CameraChange, store: Store = Depends(get_store)):
     """Switch a camera on or off, or move it to a lane / change what it reads; the detection
     service follows within a few seconds."""
     cfg = config.load_config()
@@ -479,6 +487,7 @@ def change_camera(name: str, change: CameraChange):
         _set_lane(cfg, cam, change.lane, change.role)
     elif change.role and cam.get('lane'):
         cam['role'] = change.role
+    _lanes_fit(store, cfg)
     config.save_config(cfg)
     return get_settings()
 
@@ -508,7 +517,7 @@ def _check_roi(roi):
 
 
 @app.post('/api/cameras', dependencies=[Depends(need('admin')), Depends(need_license)])
-def add_camera(cam: NewCamera):
+def add_camera(cam: NewCamera, store: Store = Depends(get_store)):
     """Add a camera, or replace the one with the same name (in its place). Detection starts on
     it within a few seconds."""
     _check_roi(cam.roi)
@@ -521,6 +530,7 @@ def add_camera(cam: NewCamera):
     cams = cfg.setdefault('cameras', [])
     i = next((i for i, c in enumerate(cams) if c['name'] == cam.name), len(cams))
     cams[i:i + 1] = [new]
+    _lanes_fit(store, cfg)
     cfg.setdefault('autostart', True)
     config.save_config(cfg)
     return get_settings()
@@ -533,20 +543,25 @@ class NewLane(BaseModel):
 
 
 @app.post('/api/lanes', dependencies=[Depends(need('admin'))])
-def add_lane(lane: NewLane):
-    """Add a lane (the cameras that see the same truck), or replace the one with the same name."""
+def add_lane(lane: NewLane, store: Store = Depends(get_store)):
+    """Add a lane (the cameras that see the same truck), or replace the one with the same name.
+    No more lanes than the license allows (422 lanes_limit)."""
     cfg = config.load_config()
     lanes = cfg.setdefault('lanes', [])
     new = {'name': lane.name, 'direction': lane.direction, 'location': lane.location.strip()}
     i = next((i for i, ln in enumerate(lanes) if ln.get('name') == lane.name), len(lanes))
+    limit = license.check(store)['lanes']
+    if i == len(lanes) and limit is not None and len(lanes) >= limit:
+        raise HTTPException(422, {'errors': ['lanes_limit']})
     lanes[i:i + 1] = [new]
     config.save_config(cfg)
     return get_settings()
 
 
 @app.delete('/api/lanes/{name}', dependencies=[Depends(need('admin'))])
-def delete_lane(name: str):
-    """Remove a lane. Its cameras stay and each works alone again, as before lanes."""
+def delete_lane(name: str, store: Store = Depends(get_store)):
+    """Remove a lane. Its cameras stay and each works alone again, as before lanes (so it can be
+    over the license's lanes: 422 lanes_limit)."""
     cfg = config.load_config()
     lane = _lane(cfg, name)
     if lane is None:
@@ -555,6 +570,7 @@ def delete_lane(name: str):
     for cam in cfg.get('cameras', []):
         if cam.get('lane') == name:
             _set_lane(cfg, cam, None, None)
+    _lanes_fit(store, cfg)
     config.save_config(cfg)
     return get_settings()
 

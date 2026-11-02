@@ -361,14 +361,14 @@ detail and as an Excel column; also written to `logs/corrections.jsonl`.
 
 ## Phase 6: License with edition, users, lanes
 
-### Task 24: New license fields and limits
+### Task 24: New license fields and limits ✅
 **Description:** Keys may carry `edition`, `users`, `lanes`. Missing = old key: users 5, lanes
 as today. Trial: 5 users, 2 lanes. Adding a user or a lane over the limit is refused with a
 plain message; existing users and lanes are never removed by a smaller key.
 
 **Acceptance criteria:**
-- [ ] Old keys from Task 12 still read and work
-- [ ] Limits enforced in the API, not only the page
+- [x] Old keys from Task 12 still read and work
+- [x] Limits enforced in the API, not only the page
 
 **Verification:** tests (test-driven). **Dependencies:** Tasks 12, 22. **Files:** `src/license.py`, `server.py`, `tests/test_license.py`. **Scope:** S
 
