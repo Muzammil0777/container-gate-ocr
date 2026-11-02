@@ -457,7 +457,7 @@ cameras online, last truck time, trucks and Check rows today, disk free, errors 
 The License card shows the last check-in and a *Check now* button.
 
 **Acceptance criteria:**
-- [ ] No internet / Control Center down / a 403 "unknown license" answer (a key issued offline
+- [x] No internet / Control Center down / a 403 "unknown license" answer (a key issued offline
       with `license_tool.py`): nothing changes, no errors on screen
 - [ ] Renewed in the Control Center: the site shows the new end date within 15 minutes (or at once with *Check now*)
 

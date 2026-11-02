@@ -23,7 +23,7 @@ from typing import Annotated, Literal
 
 # Imports the OCR code first: on Windows, a library loaded earlier (pandas was one) can make
 # onnxruntime fail with "DLL load failed while importing onnxruntime_pybind11_state".
-from src import config, license  # noqa: I001
+from src import checkin, config, license  # noqa: I001
 
 import cv2
 import numpy as np
@@ -327,7 +327,34 @@ def get_license(store: Store = Depends(get_store)):
     lanes in use against the limits."""
     return {**license.check(store), 'grace_days': license.GRACE_DAYS,
             'users_used': sum(u['active'] for u in store.users()),
-            'lanes_used': len(running_lanes(config.load_config()))}
+            'lanes_used': len(running_lanes(config.load_config())),
+            'version': version(), 'checkin_on': bool(checkin.URL), 'checkin_at': store.meta_get('checkin_at')}
+
+
+def version():
+    try:
+        return (config.ROOT / 'VERSION').read_text(encoding='utf-8').strip()
+    except OSError:
+        return 'dev'
+
+
+def site_health(store):
+    """The heartbeat's health (no plates, containers or photos): detection, cameras, trucks and
+    Check rows today, last truck, free disk."""
+    st, rows = status(), store.day(date.today().isoformat())
+    return {'detection_running': st['running'], 'cameras_total': len(st['cameras']),
+            'cameras_online': sum(c['state'] == 'ok' for c in st['cameras']),
+            'last_truck_at': store.db.execute("SELECT MAX(date || 'T' || time) FROM trucks").fetchone()[0],
+            'trucks_today': len(rows), 'check_rows_today': sum(map(needs_review, rows)),
+            'disk_free_gb': round(shutil.disk_usage(config.ROOT).free / 1e9, 1),
+            'errors_24h': None}  # ponytail: the detection service doesn't count its errors yet (cctv.py)
+
+
+@app.post('/api/license/checkin', dependencies=[Depends(need('admin'))])
+def checkin_now(store: Store = Depends(get_store)):
+    """*Check now*: a heartbeat at once (picks up a renewal); offline it just changes nothing."""
+    checkin.checkin(store, site_health(store), version())
+    return get_license(store)
 
 
 def need_license(store: Store = Depends(get_store)):
@@ -931,6 +958,7 @@ def main():
               f'(after a site password is chosen in the app)')
     if args.open:
         threading.Timer(1.5, webbrowser.open, [f'http://localhost:{args.port}']).start()
+    threading.Thread(target=checkin.every, args=(get_store, site_health, version()), daemon=True).start()
     uvicorn.run(app, host=args.host, port=args.port)
 
 
