@@ -400,6 +400,7 @@ Signed with our code-signing certificate, so Windows trusts it.
       Enterprise pages stay hidden and do nothing without it)
 **Verification:** install on a clean machine or VM. **Dependencies:** a code-signing certificate
 (yours, ~SAR 1,500/year). **Files:** `installer/`. **Scope:** M
+**Status:** `installer/` done; `setup.exe` builds (98 MB, unsigned); tests check Site vs Enterprise files. Still open: install on a clean VM (phone, restart, upgrade), signing once you have the certificate, and the Enterprise pages part after Task 26.
 
 ### Task 35: Customer docs
 **Description:** Install checklist for the customer's IT, user guide for gate staff (en/ar),
@@ -407,6 +408,7 @@ support contacts and response times.
 **Acceptance criteria:**
 - [ ] A site's IT can prepare PC, cameras and network from the checklist alone
 **Dependencies:** Tasks 33. **Files:** `docs/`. **Scope:** S
+**Status:** `docs/` done. Still open: fill the [brackets] in `docs/support.md` (phone, email, hours, response times); try the checklist with a site's IT.
 
 ### Task 19: README for sites, renewal guide for you
 **Description:** README: lanes and camera roles, ANPR setup, what customers see before and
@@ -418,6 +420,7 @@ a new computer, backing up the private key.
 **Verification:** walk through on a fresh copy.
 **Dependencies:** Tasks 10, 14, 25, 33 (the remote-renewal steps are added with Task 17).
 **Files:** `README.md`, `license_server/README.md`. **Scope:** S
+**Status:** README (app) and vendor guide (Control Center repo `README.md`) done. Still open: the walk-through on a fresh copy (with Task 33's VM install).
 
 ### Checkpoint: Site edition can be sold
 - [ ] A fresh PC: install, activate with a real key, set up a lane, log trucks, using only the
@@ -498,7 +501,7 @@ session + new installer); no automatic updates in v1.
 **Acceptance criteria:**
 - [x] The Versions page shows which clients are behind and since when
 **Verification:** tests; manual. **Dependencies:** Task 40. **Files:** `VERSION`, `CHANGELOG.md`; Control Center repo: Versions page. **Scope:** S
-**Status:** Control Center side done (releases list, behind since). Still open: `VERSION` and `CHANGELOG.md` in this repo; showing the version in the app and the heartbeat come with Task 16.
+**Status:** Control Center side done (releases list, behind since). `VERSION` (1.0.0) added with Task 33; the app and the heartbeat send it (Task 16). Still open: `CHANGELOG.md`.
 
 ### Task 17: Put the Control Center online
 **Description:** One small VPS in a Saudi data centre: Docker Compose (Caddy for HTTPS + the

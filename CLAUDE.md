@@ -10,6 +10,8 @@ Runs on a Windows site laptop, CPU only, no cloud. Users are gate staff, not dev
   `lanes.py` (cameras grouped by lane), `license.py` (verifies keys; trial, grace, user and lane limits),
   `checkin.py` (heartbeat to the Control Center; address from `GATE_CONTROL_CENTER`).
 - `web/`: Vite + React + TypeScript + Mantine. `tasks/plan.md` + `tasks/todo.md`: current plan.
+- `tools/import_excel.py`: imports a customer's old Excel gate log (paid service). `installer/`: `build.py` makes
+  `setup.exe` (Inno Setup, bundled Python 3.12, autostart). `docs/`: customer docs. `VERSION`: the app version.
 
 ## Commands
 - Tests: `py -3.12 -m pytest`

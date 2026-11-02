@@ -319,7 +319,7 @@ Enterprise only (`src/enterprise/`, `web/src/enterprise/`):
 ### Checkpoint: Two test sites on one install, each sees only its own
 
 ### Phase 11: Extras
-- [ ] Task 39: Import old gate logs from Excel (paid service)
+- [x] Task 39: Import old gate logs from Excel (paid service)
 - [ ] Task 34: Optional: compiled app (Nuitka)
 
 ### Checkpoint: Complete
