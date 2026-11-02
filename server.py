@@ -185,7 +185,7 @@ def login(body: Login, request: Request, response: Response, store: Store = Depe
         raise HTTPException(401, {'errors': ['wrong_login']})
     if not user['active']:
         raise HTTPException(403, {'errors': ['user_disabled']})
-    _failures.pop(who, None)
+    recent.remove(now)  # only this try: earlier wrong ones stay, so signing in as yourself can't reset guesses at another user
     _log_in(response, user)
     return {'ok': True}
 

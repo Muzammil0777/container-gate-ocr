@@ -467,6 +467,19 @@ def test_login_locks_out_after_many_wrong_tries(monkeypatch):
     assert other.post('/api/login', json={'username': 'admin', 'password': 'gate1234'}).status_code == 200  # others fine
 
 
+def test_own_login_does_not_reset_the_wrong_tries(monkeypatch):
+    monkeypatch.setattr(time, 'sleep', lambda s: None)
+    monkeypatch.setattr(server, '_failures', {})
+    client.put('/api/password', json={'new': 'gate1234'})
+    app.dependency_overrides[get_store]().add_user('sara', server.hash_password('sara1234'), 'operator')
+    phone = TestClient(app, client=('192.168.1.79', 40000))
+    for _ in range(server.MAX_TRIES - 1):
+        phone.post('/api/login', json={'username': 'admin', 'password': 'guess'})
+    assert phone.post('/api/login', json={'username': 'sara', 'password': 'sara1234'}).status_code == 200
+    assert phone.post('/api/login', json={'username': 'admin', 'password': 'guess'}).status_code == 401
+    assert phone.post('/api/login', json={'username': 'admin', 'password': 'gate1234'}).status_code == 429
+
+
 def test_every_api_route_declares_a_role():
     from fastapi.routing import APIRoute
     missing = [r.path for r in app.routes if isinstance(r, APIRoute) and r.path not in server.OPEN_API
