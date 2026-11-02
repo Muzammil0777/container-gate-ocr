@@ -524,6 +524,7 @@ Control Center repo and the app's license endpoints; fix every confirmed finding
 **Acceptance criteria:**
 - [ ] No high or medium findings left open
 **Verification:** review report; tests for each fix.
+**Status:** App side done (HTTPS-only check-in, no fallback login key, guess counter, installer locks the app folder to SYSTEM and Administrators); no high or medium left there. Still open: the Control Center repo review. Accepted as low: logout only clears that device's cookie, first-password race during setup, plain http on the site LAN, trial reset by someone with gate.db access, no checksum on the Python download.
 **Dependencies:** Task 17. **Scope:** S
 
 ### Checkpoint: Control Center works
