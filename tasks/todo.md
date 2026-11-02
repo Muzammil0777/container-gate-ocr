@@ -372,14 +372,13 @@ plain message; existing users and lanes are never removed by a smaller key.
 
 **Verification:** tests (test-driven). **Dependencies:** Tasks 12, 22. **Files:** `src/license.py`, `server.py`, `tests/test_license.py`. **Scope:** S
 
-### Task 25: License tool options, usage on the License card
+### Task 25: License tool options, usage on the License card ✅
 **Description:** `license_tool.py --edition --users --lanes` (Control Center repo); the License card shows
 edition, "Users 7 of 10", "Lanes 2 of 2".
 
 **Acceptance criteria:**
 - [x] A key for 10 users, typed in, raises the limit with no restart
 **Verification:** manual + tests. **Dependencies:** Task 24. **Files:** `web/src/pages/License.tsx`; Control Center repo: `license_tool.py`. **Scope:** S
-**Status:** License card done (app). Still open: `--edition`, `--users`, `--lanes` options in `license_tool.py` (Control Center repo).
 
 ### Checkpoint: User packs can be sold
 - [ ] Tests pass; code review; a site upgraded from a real old setup keeps working

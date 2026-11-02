@@ -272,7 +272,7 @@ Task numbers stay as first planned.
 
 ### Phase 6: License with edition, users, lanes
 - [x] Task 24: New license fields, user and lane limits enforced
-- [ ] Task 25: License tool options, usage on the License card
+- [x] Task 25: License tool options, usage on the License card
 
 ### Checkpoint: User packs can be sold
 
