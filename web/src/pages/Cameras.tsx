@@ -11,6 +11,8 @@ import PasswordForm from '../components/PasswordForm'
 import { LicenseCard } from './License'
 import { Direction } from '../components/TruckTable'
 
+const errorKey = (e: unknown) => (e instanceof ApiError && e.body?.detail?.errors?.[0]) || 'server_down'
+
 export type Role = 'container' | 'plate' | 'both'
 export type Camera = {
   name: string; channel?: number; source?: string; direction?: string; location?: string
@@ -166,11 +168,11 @@ function LaneList({ settings, onChanged }: { settings: Settings; onChanged: (s: 
   const [deleting, setDeleting] = useState<string>()
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [failed, setFailed] = useState(false)
+  const [failed, setFailed] = useState<string>()  // text key of the problem
 
   const change = async (p: () => Promise<Settings>) => {
-    setBusy(true); setFailed(false)
-    try { onChanged(await p()); return true } catch { setFailed(true); return false } finally { setBusy(false) }
+    setBusy(true); setFailed(undefined)
+    try { onChanged(await p()); return true } catch (e) { setFailed(errorKey(e)); return false } finally { setBusy(false) }
   }
   const save = async () => {
     if (await change(() => send<Settings>('POST', '/api/lanes', { name, direction, location }))) {
@@ -184,7 +186,7 @@ function LaneList({ settings, onChanged }: { settings: Settings; onChanged: (s: 
         <Group gap={6}><Title order={3}>{t('lanes')}</Title><HelpTip text={t('help_lane')} /></Group>
         <Text size="sm" c="dimmed">{t('lanes_help')}</Text>
       </div>
-      {failed && <Alert color="red" icon={<IconAlertTriangle />}>{t('server_down')}</Alert>}
+      {failed && <Alert color="red" icon={<IconAlertTriangle />}>{t(failed)}</Alert>}
       {settings.lanes.length === 0 && !adding && <Text c="dimmed">{t('no_lanes')}</Text>}
       <SimpleGrid cols={{ base: 1, md: 2 }}>
         {settings.lanes.map((l) => (
@@ -252,18 +254,18 @@ function CameraList({ cameras, lanes, onChanged }: { cameras: Camera[]; lanes: L
   const t = useT()
   const [deleting, setDeleting] = useState<string>()
   const [confirmOpen, setConfirmOpen] = useState(false)  // separate, so the name stays while the dialog closes
-  const [failed, setFailed] = useState(false)
+  const [failed, setFailed] = useState<string>()  // text key of the problem
 
   const change = (p: Promise<Settings>) => {
-    setFailed(false)
-    p.then(onChanged).catch(() => setFailed(true))
+    setFailed(undefined)
+    p.then(onChanged).catch((e) => setFailed(errorKey(e)))
   }
   const path = (name: string) => `/api/cameras/${encodeURIComponent(name)}`
 
   return (
     <Stack gap="md">
       <Title order={3}>{t('cameras')}</Title>
-      {failed && <Alert color="red" icon={<IconAlertTriangle />}>{t('server_down')}</Alert>}
+      {failed && <Alert color="red" icon={<IconAlertTriangle />}>{t(failed)}</Alert>}
       {cameras.length === 0 && <Text c="dimmed">{t('no_cameras_list')}</Text>}
       <SimpleGrid cols={{ base: 1, md: 2 }}>
         {cameras.map((c) => {
