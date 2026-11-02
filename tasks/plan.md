@@ -260,7 +260,7 @@ Task numbers stay as first planned.
 - [x] Task 11: License check: signed key, machine code, states, clock guard (test-driven)
 - [x] Task 12: Your license tool: make keys, issue and inspect licenses (creates the Control Center repo)
 - [x] Task 13: Activation screen, License card, expiry banners
-- [ ] Task 14: After the grace period: detection stops, data stays available
+- [x] Task 14: After the grace period: detection stops, data stays available
 
 ### Checkpoint: Licensing works offline
 
@@ -271,7 +271,7 @@ Task numbers stay as first planned.
 - [x] Task 23: Who fixed a reading (`corrected_by`)
 
 ### Phase 6: License with edition, users, lanes
-- [ ] Task 24: New license fields, user and lane limits enforced
+- [x] Task 24: New license fields, user and lane limits enforced
 - [ ] Task 25: License tool options, usage on the License card
 
 ### Checkpoint: User packs can be sold
@@ -287,7 +287,7 @@ Task numbers stay as first planned.
 - [x] Task 15: Control Center server: clients, contracts, licenses, check-in, 2FA login
 - [ ] Task 16: App heartbeat every 15 minutes, picks up renewals
 - [x] Task 40: Control Center pages: Clients, Renewals, Health, Versions
-- [ ] Task 41: Alerts to you by email
+- [x] Task 41: Alerts to you by email
 - [ ] Task 42: Versions and releases (`VERSION`, `CHANGELOG.md`)
 - [ ] Task 17: Put the Control Center online (HTTPS) and renew a site remotely
 - [ ] Task 18: Security review of licensing and the Control Center, fix findings

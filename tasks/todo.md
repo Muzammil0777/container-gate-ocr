@@ -479,13 +479,13 @@ amber / red: silent, cameras down, disk low, license ending); **Versions** (who 
 **Verification:** browser check against a local Control Center with 3 fake deployments sending heartbeats.
 **Dependencies:** Task 15. **Files:** Control Center repo: `web/`, `app.py`. **Scope:** L
 
-### Task 41: Alerts to you
+### Task 41: Alerts to you ✅
 **Description:** Email (SMTP) when: a deployment is silent > 2 h, a camera is offline > 1 h, disk
 < 10 %, a license ends in 30 / 7 days, errors jump. One daily summary. Each alert once, then a
 reminder a day later, not every 15 minutes. WhatsApp later if email isn't enough.
 
 **Acceptance criteria:**
-- [ ] Each rule tested with fake heartbeats; no repeat alert within a day
+- [x] Each rule tested with fake heartbeats; no repeat alert within a day
 **Verification:** tests; one real email to you. **Dependencies:** Task 15. **Files:** Control Center repo: `alerts.py`, `tests/`. **Scope:** S
 
 ### Task 42: Versions and releases
@@ -495,8 +495,9 @@ holds the latest version and marks older deployments. Updates are installed by y
 session + new installer); no automatic updates in v1.
 
 **Acceptance criteria:**
-- [ ] The Versions page shows which clients are behind and since when
+- [x] The Versions page shows which clients are behind and since when
 **Verification:** tests; manual. **Dependencies:** Task 40. **Files:** `VERSION`, `CHANGELOG.md`; Control Center repo: Versions page. **Scope:** S
+**Status:** Control Center side done (releases list, behind since). Still open: `VERSION` and `CHANGELOG.md` in this repo; showing the version in the app and the heartbeat come with Task 16.
 
 ### Task 17: Put the Control Center online
 **Description:** One small VPS in a Saudi data centre: Docker Compose (Caddy for HTTPS + the

@@ -6,7 +6,8 @@ Runs on a Windows site laptop, CPU only, no cloud. Users are gate staff, not dev
 ## Layout
 - `cctv.py`: detection service. `server.py`: FastAPI API + serves the React app from `web/dist`.
 - `src/`: `gate.py` (truck logic), `store.py` (SQLite, Excel, corrections), `recognizer.py`/`scanner.py` (OCR),
-  `iso6346.py`, `saudi_plate.py`, `camera.py` (NVR/RTSP), `config.py` (cameras.json), `i18n.py` (all UI text).
+  `iso6346.py`, `saudi_plate.py`, `camera.py` (NVR/RTSP), `config.py` (cameras.json), `i18n.py` (all UI text),
+  `lanes.py` (cameras grouped by lane), `license.py` (verifies keys; trial, grace, user and lane limits).
 - `web/`: Vite + React + TypeScript + Mantine. `tasks/plan.md` + `tasks/todo.md`: current plan.
 
 ## Commands
