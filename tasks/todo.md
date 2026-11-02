@@ -379,6 +379,7 @@ edition, "Users 7 of 10", "Lanes 2 of 2".
 **Acceptance criteria:**
 - [x] A key for 10 users, typed in, raises the limit with no restart
 **Verification:** manual + tests. **Dependencies:** Task 24. **Files:** `web/src/pages/License.tsx`; Control Center repo: `license_tool.py`. **Scope:** S
+**Status:** License card done (app). Still open: `--edition`, `--users`, `--lanes` options in `license_tool.py` (Control Center repo).
 
 ### Checkpoint: User packs can be sold
 - [ ] Tests pass; code review; a site upgraded from a real old setup keeps working
@@ -462,6 +463,7 @@ The License card shows the last check-in and a *Check now* button.
 - [ ] Renewed in the Control Center: the site shows the new end date within 15 minutes (or at once with *Check now*)
 
 **Verification:** tests against a local Control Center; manual.
+**Status:** Heartbeat done (`src/checkin.py`, address from `GATE_CONTROL_CENTER`). Still open: the renewal box, checked against the live Control Center (Task 17, README step 8).
 **Dependencies:** Tasks 14, 15. **Files:** `src/checkin.py`, `src/license.py`, `server.py`, `web/src/pages/License.tsx`, `src/i18n.py`. **Scope:** M
 
 ### Task 40: Control Center app (pages) ✅
@@ -510,6 +512,7 @@ the check-in address stays open (rate-limited).
 - [ ] A test site picks up a renewal made in the online Control Center
 
 **Verification:** the Control Center repo's `README.md` steps followed exactly on a fresh VPS.
+**Status:** Deploy files and README steps done and tested locally (Control Center repo `deploy/`). Still open: follow the README on the VPS.
 **Dependencies:** Tasks 16, 40, your VPS. **Files:** Control Center repo: `README.md`, `deploy/`. **Scope:** M
 
 ### Task 18: Security review of licensing and the Control Center
