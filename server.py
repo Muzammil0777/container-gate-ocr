@@ -107,10 +107,10 @@ def _user(store, cookie):
         uid, expires = int(uid), int(expires)
     except ValueError:
         return None
-    user = store.user(uid=uid)
-    if not user or not user['active'] or expires <= time.time():
+    user, secret = store.user(uid=uid), config.load_config().get('session_secret')
+    if not user or not user['active'] or not secret or expires <= time.time():  # no secret: no login was ever signed
         return None
-    good = _session(config.load_config().get('session_secret', '00'), user, expires)
+    good = _session(secret, user, expires)
     return user if hmac.compare_digest(good.encode(), cookie.encode()) else None
 
 
@@ -185,7 +185,7 @@ def login(body: Login, request: Request, response: Response, store: Store = Depe
         raise HTTPException(401, {'errors': ['wrong_login']})
     if not user['active']:
         raise HTTPException(403, {'errors': ['user_disabled']})
-    _failures.pop(who, None)
+    recent.remove(now)  # only this try: earlier wrong ones stay, so signing in as yourself can't reset guesses at another user
     _log_in(response, user)
     return {'ok': True}
 

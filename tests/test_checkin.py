@@ -82,6 +82,15 @@ def test_ended_stops_the_license_and_active_brings_it_back(licensed, control_cen
     assert client.get('/api/license').json()['state'] == 'active'
 
 
+def test_a_plain_http_control_center_is_never_called(licensed):
+    _, make, store = licensed
+    store.meta_set('license_key', make())
+    calls = []
+    assert checkin.checkin(store, {}, '1.4.0', url='http://cc.example.com/v1/checkin',
+                           post=lambda *a: calls.append(a) or {'status': 'ended'}) is False
+    assert calls == [] and client.get('/api/license').json()['state'] == 'active'
+
+
 @pytest.mark.parametrize('trouble', ['refused_403', 'down', 'no_address', 'trial'])
 def test_offline_down_or_unknown_license_changes_nothing(licensed, control_center, trouble):
     _, make, store = licensed

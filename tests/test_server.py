@@ -445,6 +445,15 @@ def test_site_password_and_login(monkeypatch):
     assert phone.get('/api/settings').status_code == 401
 
 
+def test_no_session_secret_accepts_no_cookie():
+    local = TestClient(app, client=('127.0.0.1', 50001))
+    local.put('/api/password', json={'new': 'gate1234'})
+    user = app.dependency_overrides[get_store]().user('admin')
+    config.save_config({})                                    # cameras.json reset: the secret is gone
+    local.cookies.set(COOKIE, server._session('00', user, int(time.time()) + 60))
+    assert local.get('/api/settings').status_code == 401
+
+
 def test_login_locks_out_after_many_wrong_tries(monkeypatch):
     monkeypatch.setattr(time, 'sleep', lambda s: None)
     monkeypatch.setattr(server, '_failures', {})
@@ -456,6 +465,19 @@ def test_login_locks_out_after_many_wrong_tries(monkeypatch):
     assert r.status_code == 429 and r.json()['detail'] == {'errors': ['too_many_tries']}
     other = TestClient(app, client=('192.168.1.78', 40000))
     assert other.post('/api/login', json={'username': 'admin', 'password': 'gate1234'}).status_code == 200  # others fine
+
+
+def test_own_login_does_not_reset_the_wrong_tries(monkeypatch):
+    monkeypatch.setattr(time, 'sleep', lambda s: None)
+    monkeypatch.setattr(server, '_failures', {})
+    client.put('/api/password', json={'new': 'gate1234'})
+    app.dependency_overrides[get_store]().add_user('sara', server.hash_password('sara1234'), 'operator')
+    phone = TestClient(app, client=('192.168.1.79', 40000))
+    for _ in range(server.MAX_TRIES - 1):
+        phone.post('/api/login', json={'username': 'admin', 'password': 'guess'})
+    assert phone.post('/api/login', json={'username': 'sara', 'password': 'sara1234'}).status_code == 200
+    assert phone.post('/api/login', json={'username': 'admin', 'password': 'guess'}).status_code == 401
+    assert phone.post('/api/login', json={'username': 'admin', 'password': 'gate1234'}).status_code == 429
 
 
 def test_every_api_route_declares_a_role():

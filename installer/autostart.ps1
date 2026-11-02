@@ -1,5 +1,6 @@
-# Run by setup.exe (as administrator). -Install: start the gate with Windows and open port 8000 to
-# the site network. -Stop: stop the running gate (before an upgrade). -Remove: stop and undo -Install.
+# Run by setup.exe (as administrator). -Install: lock the app folder, start the gate with Windows and
+# open port 8000 to the site network. -Stop: stop the running gate (before an upgrade).
+# -Remove: stop and undo -Install (the folder stays locked).
 param([switch]$Install, [switch]$Stop, [switch]$Remove)
 $name = 'Container Gate OCR'
 $app = $PSScriptRoot
@@ -15,6 +16,14 @@ function Stop-Gate {
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 }
 
+# Only SYSTEM (the gate) and Administrators (IT) can read the app folder: logs\gate.db has the
+# password hashes, cameras.json the NVR password and the login secret. Everyone may open the shortcut.
+# SIDs, not names, so it works on Arabic Windows too.
+function Lock-Folder($dir) {
+    if (Test-Path "$dir\Gate app.url") { icacls "$dir\Gate app.url" /grant '*S-1-5-32-545:R' /Q | Out-Null }
+    icacls $dir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' /Q | Out-Null  # files inside follow
+}
+
 if ($Stop -or $Remove) { Stop-Gate }
 if ($Remove) {
     Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
@@ -22,6 +31,7 @@ if ($Remove) {
 }
 if ($Install) {
     Stop-Gate
+    Lock-Folder $app
     # At PC start, as SYSTEM (no one needs to sign in), never stopped after 3 days, also on battery.
     $action = New-ScheduledTaskAction -Execute "$app\gate_service.bat" -WorkingDirectory $app
     $trigger = New-ScheduledTaskTrigger -AtStartup

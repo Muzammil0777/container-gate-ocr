@@ -8,6 +8,7 @@ Any failure (no internet, Control Center down, 403 for a key made offline) chang
 import json
 import os
 import time
+import urllib.parse
 import urllib.request
 from datetime import date
 
@@ -24,12 +25,19 @@ def _post(url, body):
         return json.loads(r.read())
 
 
+def _safe(url):
+    """Only HTTPS (or this computer, for tests): over plain HTTP anyone on the way could answer
+    "ended" and stop the gate's cameras."""
+    u = urllib.parse.urlsplit(url)
+    return u.scheme == 'https' or (u.scheme == 'http' and u.hostname in ('127.0.0.1', 'localhost'))
+
+
 def checkin(store, health, version, url=None, post=_post):
     """Send one heartbeat and apply the answer. True if the Control Center answered, else False
-    (no address, no key yet, offline, refused: nothing changes)."""
+    (no address, not HTTPS, no key yet, offline, refused: nothing changes)."""
     url = URL if url is None else url
     lic = license.check(store)
-    if not url or not lic['lid']:
+    if not url or not _safe(url) or not lic['lid']:
         return False
     body = {'license_id': lic['lid'], 'machine': lic['machine'], 'version': version,
             'edition': lic['edition'], 'state': lic['state'], 'health': health}
