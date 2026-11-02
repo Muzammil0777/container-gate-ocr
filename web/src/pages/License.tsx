@@ -11,6 +11,7 @@ export type License = {
   state: 'trial' | 'active' | 'expiring' | 'grace' | 'expired' | 'unlicensed'
   ends: string; days_left: number; grace_days: number; machine: string; clock_behind: boolean
   customer: string | null; site: string | null
+  edition: string; users: number; users_used: number; lanes: number | null; lanes_used: number
 }
 
 /** The license, reloaded whenever a key is activated anywhere in the app. */
@@ -92,6 +93,11 @@ export function LicenseCard() {
           </Badge>
         </Group>
         <Text>{t(lic.days_left < 0 ? 'license_ended' : 'license_ends', { date: lic.ends, n: lic.days_left })}</Text>
+        <Group gap="sm">
+          <Badge variant="outline">{t(`license_edition_${lic.edition}`)}</Badge>
+          <Text size="sm">{t('license_users', { n: lic.users_used, max: lic.users })}</Text>
+          <Text size="sm">{t(lic.lanes == null ? 'license_lanes_any' : 'license_lanes', { n: lic.lanes_used, max: lic.lanes ?? '' })}</Text>
+        </Group>
         {lic.customer && <Text c="dimmed">{t('license_for', { customer: lic.customer, site: lic.site ?? '' })}</Text>}
         {lic.clock_behind && <Alert color="yellow" icon={<IconAlertTriangle />}>{t('license_clock_behind')}</Alert>}
         <div>

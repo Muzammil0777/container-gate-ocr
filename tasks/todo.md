@@ -377,7 +377,7 @@ plain message; existing users and lanes are never removed by a smaller key.
 edition, "Users 7 of 10", "Lanes 2 of 2".
 
 **Acceptance criteria:**
-- [ ] A key for 10 users, typed in, raises the limit with no restart
+- [x] A key for 10 users, typed in, raises the limit with no restart
 **Verification:** manual + tests. **Dependencies:** Task 24. **Files:** `web/src/pages/License.tsx`; Control Center repo: `license_tool.py`. **Scope:** S
 
 ### Checkpoint: User packs can be sold

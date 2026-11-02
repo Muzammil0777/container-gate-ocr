@@ -657,6 +657,20 @@ def test_lanes_limit(licensed):
     assert client.get('/api/license').json()['lanes'] == 1
 
 
+def test_a_key_for_10_users_typed_in_raises_the_limit_at_once(licensed, monkeypatch):
+    monkeypatch.setattr(time, 'sleep', lambda s: None)
+    _, make, store = licensed
+    admin = _signed_in(store, 'boss', 'admin', '192.168.1.62')
+    for i in range(4):
+        store.add_user(f'u{i}', 'pbkdf2_sha256$x', 'viewer')                # 5 users: the default limit
+    body = admin.get('/api/license').json()
+    assert (body['edition'], body['users'], body['users_used'], body['lanes_used']) == ('site', 5, 5, 2)
+    assert admin.post('/api/users', json={'username': 'sara', 'password': 'pw654321'}).status_code == 422
+    body = admin.post('/api/license', json={'key': make(edition='enterprise', users=10, lanes=2)}).json()
+    assert (body['edition'], body['users'], body['users_used'], body['lanes']) == ('enterprise', 10, 5, 2)
+    assert admin.post('/api/users', json={'username': 'sara', 'password': 'pw654321'}).status_code == 200
+
+
 def test_license_texts_exist_in_both_languages():
     for k in ('license_bad_format', 'license_unknown_signer', 'license_bad_signature', 'license_other_machine',
               'license_key_expired', 'license_banner_expiring', 'license_banner_grace', 'license_banner_expired',

@@ -328,6 +328,11 @@ TEXT = {
     'license_ends': ('Ends on {date} ({n} days left)', 'ينتهي في {date} (باقي {n} يوم)'),
     'license_ended': ('Ended on {date}', 'انتهى في {date}'),
     'license_for': ('Licensed to {customer}, {site}', 'مرخّص لـ {customer}، {site}'),
+    'license_edition_site': ('Site edition', 'إصدار الموقع'),
+    'license_edition_enterprise': ('Enterprise edition', 'إصدار المؤسسات'),
+    'license_users': ('Users {n} of {max}', 'المستخدمون {n} من {max}'),
+    'license_lanes': ('Lanes {n} of {max}', 'المسارات {n} من {max}'),
+    'license_lanes_any': ('Lanes {n} (no limit)', 'المسارات {n} (بلا حد)'),
     'machine_code': ('Machine code', 'رمز الجهاز'),
     'help_machine_code': ('This code belongs to this computer. Send it when you order a license key: the key works only '
                           'on the computer with this code.',

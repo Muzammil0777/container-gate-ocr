@@ -323,8 +323,11 @@ def _enabled_cameras():
 @app.get('/api/license', dependencies=[Depends(need('viewer'))])
 def get_license(store: Store = Depends(get_store)):
     """This computer's license: state (trial / active / expiring / grace / expired / unlicensed),
-    end date, days left, machine code (for ordering a key), and who it was issued to."""
-    return {**license.check(store), 'grace_days': license.GRACE_DAYS}
+    end date, days left, machine code (for ordering a key), who it was issued to, and users and
+    lanes in use against the limits."""
+    return {**license.check(store), 'grace_days': license.GRACE_DAYS,
+            'users_used': sum(u['active'] for u in store.users()),
+            'lanes_used': len(running_lanes(config.load_config()))}
 
 
 def need_license(store: Store = Depends(get_store)):
