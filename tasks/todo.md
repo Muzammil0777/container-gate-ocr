@@ -377,7 +377,7 @@ plain message; existing users and lanes are never removed by a smaller key.
 edition, "Users 7 of 10", "Lanes 2 of 2".
 
 **Acceptance criteria:**
-- [ ] A key for 10 users, typed in, raises the limit with no restart
+- [x] A key for 10 users, typed in, raises the limit with no restart
 **Verification:** manual + tests. **Dependencies:** Task 24. **Files:** `web/src/pages/License.tsx`; Control Center repo: `license_tool.py`. **Scope:** S
 
 ### Checkpoint: User packs can be sold
@@ -457,7 +457,7 @@ cameras online, last truck time, trucks and Check rows today, disk free, errors 
 The License card shows the last check-in and a *Check now* button.
 
 **Acceptance criteria:**
-- [ ] No internet / Control Center down / a 403 "unknown license" answer (a key issued offline
+- [x] No internet / Control Center down / a 403 "unknown license" answer (a key issued offline
       with `license_tool.py`): nothing changes, no errors on screen
 - [ ] Renewed in the Control Center: the site shows the new end date within 15 minutes (or at once with *Check now*)
 

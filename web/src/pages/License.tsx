@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   Alert, Badge, Button, Code, CopyButton, Group, Paper, Stack, Text, Textarea, Title,
 } from '@mantine/core'
-import { IconAlertTriangle, IconCheck, IconCopy, IconKey } from '@tabler/icons-react'
+import { IconAlertTriangle, IconCheck, IconCopy, IconKey, IconRefresh } from '@tabler/icons-react'
 import { api, ApiError, send, useT } from '../api'
 import HelpTip from '../components/HelpTip'
 
@@ -11,6 +11,8 @@ export type License = {
   state: 'trial' | 'active' | 'expiring' | 'grace' | 'expired' | 'unlicensed'
   ends: string; days_left: number; grace_days: number; machine: string; clock_behind: boolean
   customer: string | null; site: string | null
+  edition: string; users: number; users_used: number; lanes: number | null; lanes_used: number
+  version: string; checkin_on: boolean; checkin_at: string | null
 }
 
 /** The license, reloaded whenever a key is activated anywhere in the app. */
@@ -68,6 +70,13 @@ export function LicenseCard() {
   const [key, setKey] = useState('')
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; key: string }>()  // a text key, so it follows the language
+  const [checking, setChecking] = useState(false)
+
+  const checkNow = async () => {  // offline it just changes nothing: the last check-in time stays
+    setChecking(true)
+    try { await send('POST', '/api/license/checkin', {}); dispatchEvent(new Event('gate-license')) } catch { /* nothing to show */ }
+    finally { setChecking(false) }
+  }
 
   const activate = async () => {
     setBusy(true); setResult(undefined)
@@ -91,7 +100,20 @@ export function LicenseCard() {
             {t(`license_state_${lic.state}`)}
           </Badge>
         </Group>
-        <Text>{t(lic.days_left < 0 ? 'license_ended' : 'license_ends', { date: lic.ends, n: lic.days_left })}</Text>
+        <Text>{t(lic.days_left < 0 || lic.state === 'expired' ? 'license_ended' : 'license_ends', { date: lic.ends, n: lic.days_left })}</Text>
+        <Group gap="sm">
+          <Badge variant="outline">{t(`license_edition_${lic.edition}`)}</Badge>
+          <Text size="sm">{t('license_users', { n: lic.users_used, max: lic.users })}</Text>
+          <Text size="sm">{t(lic.lanes == null ? 'license_lanes_any' : 'license_lanes', { n: lic.lanes_used, max: lic.lanes ?? '' })}</Text>
+        </Group>
+        {lic.checkin_on && (
+          <Group gap="sm">
+            <Text size="sm">{lic.checkin_at ? t('license_checkin_at', { when: lic.checkin_at.replace('T', ' ').slice(0, 16) }) : t('license_checkin_never')}</Text>
+            <HelpTip text={t('help_checkin')} />
+            <Button variant="light" size="xs" loading={checking} onClick={checkNow} leftSection={<IconRefresh size={16} />}>{t('check_now')}</Button>
+          </Group>
+        )}
+        <Text size="xs" c="dimmed">{t('license_version', { v: lic.version })}</Text>
         {lic.customer && <Text c="dimmed">{t('license_for', { customer: lic.customer, site: lic.site ?? '' })}</Text>}
         {lic.clock_behind && <Alert color="yellow" icon={<IconAlertTriangle />}>{t('license_clock_behind')}</Alert>}
         <div>

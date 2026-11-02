@@ -328,6 +328,19 @@ TEXT = {
     'license_ends': ('Ends on {date} ({n} days left)', 'ينتهي في {date} (باقي {n} يوم)'),
     'license_ended': ('Ended on {date}', 'انتهى في {date}'),
     'license_for': ('Licensed to {customer}, {site}', 'مرخّص لـ {customer}، {site}'),
+    'license_edition_site': ('Site edition', 'إصدار الموقع'),
+    'license_edition_enterprise': ('Enterprise edition', 'إصدار المؤسسات'),
+    'license_users': ('Users {n} of {max}', 'المستخدمون {n} من {max}'),
+    'license_lanes': ('Lanes {n} of {max}', 'المسارات {n} من {max}'),
+    'license_lanes_any': ('Lanes {n} (no limit)', 'المسارات {n} (بلا حد)'),
+    'license_checkin_at': ('Last check-in with us: {when}', 'آخر اتصال بنا: {when}'),
+    'license_checkin_never': ('Not checked in with us yet', 'لم يتصل بنا بعد'),
+    'help_checkin': ('Every 15 minutes, when there is internet, this computer tells us it is working and picks up a '
+                     'renewed key by itself. No plates, container numbers or photos are sent.',
+                     'كل 15 دقيقة، عند توفر الإنترنت، يخبرنا هذا الجهاز أنه يعمل ويستلم المفتاح المجدد تلقائياً. '
+                     'لا تُرسل أي لوحات أو أرقام حاويات أو صور.'),
+    'check_now': ('Check now', 'تحقق الآن'),
+    'license_version': ('App version {v}', 'إصدار التطبيق {v}'),
     'machine_code': ('Machine code', 'رمز الجهاز'),
     'help_machine_code': ('This code belongs to this computer. Send it when you order a license key: the key works only '
                           'on the computer with this code.',

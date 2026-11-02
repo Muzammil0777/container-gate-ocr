@@ -7,7 +7,7 @@ the private key, which never leaves the vendor (tools/license_tool.py).
 
 States: trial (14 days from the first start, no key needed), active, expiring (from 30 days
 before the end date), grace (14 days after it), then expired; unlicensed after a trial with
-no key. Detection runs in trial, active, expiring and grace; records and exports always work.
+no key; expired at once when the Control Center answers "ended" (src/checkin.py). Detection runs in trial, active, expiring and grace; records and exports always work.
 The latest time seen is kept, so setting the computer's clock back doesn't extend anything.
 """
 import base64
@@ -134,6 +134,10 @@ def check(store, machine=None, keys=None, now=None):
     machine = machine or machine_code()
     text = store.meta_get('license_key')
     payload, error = read_key(text, keys, machine) if text else (None, None)
-    return {**status(payload, first.date(), effective.date()), **limits(payload), 'machine': machine, 'key_error': error,
+    state = status(payload, first.date(), effective.date())
+    ended_on = _when(store.meta_get('license_ended_on'))
+    if payload and ended_on and store.meta_get('license_ended') == payload.get('lid'):  # ended in the Control Center
+        state = {'state': 'expired', 'ends': ended_on.date().isoformat(), 'days_left': (ended_on.date() - effective.date()).days}
+    return {**state, **limits(payload), 'machine': machine, 'key_error': error,
             'clock_behind': last is not None and now < last - timedelta(days=1),
             **{k: (payload or {}).get(k) for k in ('customer', 'site', 'lid', 'cameras')}}
