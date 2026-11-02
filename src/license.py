@@ -22,6 +22,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey,
 
 PREFIX = 'GATE1'
 TRIAL_DAYS, WARN_DAYS, GRACE_DAYS = 14, 30, 14
+USERS, TRIAL_LANES = 5, 2  # users when a key doesn't say (and in the trial); lanes in the trial
 PUBLIC_KEYS = {}  # key id -> Ed25519 public key (hex); the real one is added with tools/license_tool.py keygen
 
 
@@ -99,6 +100,14 @@ def status(payload, first_start, today):
     return {'state': state, 'ends': ends.isoformat(), 'days_left': left}
 
 
+def limits(payload):
+    """{'edition', 'users', 'lanes'} a license's details allow (lanes None: no limit). Keys made
+    before these fields: 5 users, lanes as before (no limit). No key: the trial's 5 users, 2 lanes."""
+    if payload is None:
+        return {'edition': 'site', 'users': USERS, 'lanes': TRIAL_LANES}
+    return {'edition': payload.get('edition', 'site'), 'users': payload.get('users', USERS), 'lanes': payload.get('lanes')}
+
+
 def detection_allowed(state):
     return state in ('trial', 'active', 'expiring', 'grace')
 
@@ -125,6 +134,6 @@ def check(store, machine=None, keys=None, now=None):
     machine = machine or machine_code()
     text = store.meta_get('license_key')
     payload, error = read_key(text, keys, machine) if text else (None, None)
-    return {**status(payload, first.date(), effective.date()), 'machine': machine, 'key_error': error,
+    return {**status(payload, first.date(), effective.date()), **limits(payload), 'machine': machine, 'key_error': error,
             'clock_behind': last is not None and now < last - timedelta(days=1),
             **{k: (payload or {}).get(k) for k in ('customer', 'site', 'lid', 'cameras')}}

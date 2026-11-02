@@ -23,6 +23,7 @@ from src.camera import camera_source, hikvision_url, open_capture, port_open, re
 
 import cv2
 
+from src import license
 from src.gate import GateLog, LaneTracker
 from src.lanes import lanes
 from src.recognizer import Recognizer, draw
@@ -43,6 +44,7 @@ DEFAULTS = {
     'max_wait_s': 10,           # ...or this long after the first confirmed read
 }
 STATUS_EVERY_S = 2
+LICENSE_EVERY_S = 30  # a renewed key restarts detection within this time
 
 
 class LatestFrame:
@@ -273,6 +275,23 @@ class LiveManager:
             self.flush()
 
 
+def licensed(store):
+    """Whether the license lets the cameras be read (trial, active, ending soon or grace days)."""
+    return license.detection_allowed(license.check(store)['state'])
+
+
+def follow_license(manager, was):
+    """Stop every lane once the license has run out. Returns whether detection is allowed now;
+    `was` is the last answer (None at start)."""
+    allowed = licensed(manager.store)
+    if not allowed:
+        for name in list(manager.lanes):
+            manager.stop(name)
+        if was is not False:
+            print('[cctv] The license has ended, so the cameras are not being read. Records and Excel files still work.')
+    return allowed
+
+
 def serve(config_path):
     """The gate service: run the cameras listed in config_path (skipping "enabled": false),
     follow changes to the file, and publish status for the app until Ctrl+C."""
@@ -283,12 +302,17 @@ def serve(config_path):
     if other and other.get('pid') != os.getpid() and time.time() - other.get('updated', 0) < 3 * STATUS_EVERY_S:
         print(f"[cctv] The gate service is already running (process {other.get('pid')}); not starting a second copy.")
         return
-    manager, mtime, next_status = LiveManager(cfg), None, 0
+    manager, mtime, next_status, next_license, allowed = LiveManager(cfg), None, 0, 0, None
     print(f"[cctv] gate service running, following {path.resolve()}  (Ctrl+C to stop)")
     try:
         while True:
+            if time.time() >= next_license:
+                next_license = time.time() + LICENSE_EVERY_S
+                was, allowed = allowed, follow_license(manager, allowed)
+                if allowed and was is False:  # a new key: start the cameras again
+                    mtime = None
             m = path.stat().st_mtime if path.exists() else None
-            if m != mtime:  # (re)load the lanes; only the ones that changed restart
+            if allowed and m != mtime:  # (re)load the lanes; only the ones that changed restart
                 mtime, new = m, {**DEFAULTS, **_read_json(path)}
                 reload(manager, new)
             if time.time() >= next_status:
@@ -414,6 +438,9 @@ def main():
     cam = {'source': args.source} if args.source else {'channel': args.channel}
     cam.update(name=args.name, direction=args.direction, location=args.location)
     camera_source(cam, cfg.get('nvr'))  # fail now on a missing ip/password, not in a thread
+    if not licensed(Store(cfg['db'])):
+        print('[cctv] The license has ended, so the cameras are not being read. Records and Excel files still work.')
+        return
 
     if args.show:
         try:
