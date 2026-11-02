@@ -156,7 +156,8 @@ code it was made for.
 
 ## Where the data is
 
-On an installed site these are in `C:\Program Files\Container Gate OCR`. Back up `logs\`.
+On an installed site these are in `C:\Program Files\Container Gate OCR`. Back up `logs\` (only SYSTEM and Administrators can read this folder, so run the backup
+as an administrator).
 
 | Path | What |
 |---|---|
