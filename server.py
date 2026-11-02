@@ -328,6 +328,13 @@ def get_license(store: Store = Depends(get_store)):
     return {**license.check(store), 'grace_days': license.GRACE_DAYS}
 
 
+def need_license(store: Store = Depends(get_store)):
+    """Route dependency: refused (403) once the license has run out (after the grace days)."""
+    state = license.check(store)['state']
+    if not license.detection_allowed(state):
+        raise HTTPException(403, {'errors': [f'license_banner_{state}']})
+
+
 class LicenseKey(BaseModel):
     key: Annotated[str, StringConstraints(max_length=4000)]
 
@@ -500,7 +507,7 @@ def _check_roi(roi):
         raise HTTPException(422, {'errors': ['bad_area']})
 
 
-@app.post('/api/cameras', dependencies=[Depends(need('admin'))])
+@app.post('/api/cameras', dependencies=[Depends(need('admin')), Depends(need_license)])
 def add_camera(cam: NewCamera):
     """Add a camera, or replace the one with the same name (in its place). Detection starts on
     it within a few seconds."""
@@ -751,7 +758,7 @@ def _job(job_id):
     return job
 
 
-@app.post('/api/video', dependencies=[Depends(need('operator'))])
+@app.post('/api/video', dependencies=[Depends(need('operator')), Depends(need_license)])
 def video_start(file: UploadFile = File(...), fps: float = Form(2.0), min_hits: int = Form(2),
                 direction: str = Form('IN'), location: str = Form(''), max_side: int = Form(1920),
                 zoom: bool = Form(True), vertical: bool = Form(True), plates: bool = Form(True)):

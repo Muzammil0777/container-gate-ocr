@@ -293,14 +293,14 @@ contact details.
 **Verification:** API tests; browser check of each state (keys made by the test key pair).
 **Dependencies:** Tasks 11, 12. **Files:** `server.py`, `web/src/pages/License.tsx`, `web/src/App.tsx`, `src/i18n.py`, `tests/test_server.py`. **Scope:** M
 
-### Task 14: After the grace period
+### Task 14: After the grace period ✅
 **Description:** When the license has run out (after grace), the detection service stops
 reading cameras and the app refuses new cameras and video tests. Records, photos,
 corrections and downloads keep working. A new key restarts detection within a minute.
 
 **Acceptance criteria:**
-- [ ] Expired: no new rows; existing rows, Excel and ZIP still available
-- [ ] Renewed key: detection resumes without restarting the computer
+- [x] Expired: no new rows; existing rows, Excel and ZIP still available
+- [x] Renewed key: detection resumes without restarting the computer
 
 **Verification:** tests with a short-lived test key; manual run.
 **Dependencies:** Task 13. **Files:** `cctv.py`, `server.py`, `tests/test_license_enforce.py`. **Scope:** S
