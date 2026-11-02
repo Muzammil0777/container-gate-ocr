@@ -7,54 +7,71 @@ location, a snapshot and a plate close-up. Records are reviewed and corrected in
 downloaded as Excel per day or per month, or as a ZIP with photos. English and Arabic.
 
 The app opens in a web browser, on the gate computer and on any computer or phone on the site
-network (with the site password). Each site runs its own copy.
+network (each person signs in with their own username). Each site runs its own copy.
 
 Everything is free and runs on a normal Windows laptop CPU: no GPU, no cloud, no paid API.
 
 ![Output example](./output.jpg?raw=true "Output example")
 
-## Install on the site laptop
+## Install on a site PC
 
-1. Install **Python 3.12** from https://www.python.org/downloads/ (tick *Add python.exe to
-   PATH*). Python 3.13 or newer will **not** work: the OCR package supports up to 3.12.
-2. Get the project, either with `git clone https://github.com/Muzammil0777/container-gate-ocr.git`
-   or with *Code → Download ZIP*.
-3. In the project folder:
+Before the install day, the site's IT prepares the PC, cameras and network with
+[docs/it-checklist.md](docs/it-checklist.md). Gate staff get [docs/user-guide.md](docs/user-guide.md)
+(English and Arabic); support contacts are in [docs/support.md](docs/support.md).
 
-   ```bash
-   py -3.12 -m pip install -r requirements.txt
-   ```
-
-4. Connect the laptop to the camera network. Use a cable to the NVR's LAN port or its switch;
-   the Wi-Fi can stay on for internet. If the cable gives an address starting `169.254`, give
-   the Ethernet port a fixed IP in the NVR's range.
-5. **Start:** double-click `start_gate.bat`. It starts the detection service (minimised
-   window) and opens the app in the browser at http://localhost:8000. Keep the black
-   *Gate app* window open.
-6. **The first time, the app walks you through setup:**
-   1. choose a **site password**
+1. On the gate PC, signed in as an administrator, run `ContainerGateOCR-site-<version>-setup.exe`
+   (made with `installer/build.py`, see *Building the installer* below). Nothing else is needed:
+   Python, the OCR models and the web app are inside.
+2. It installs to `C:\Program Files\Container Gate OCR`, starts the gate with the PC (Task Scheduler,
+   *Container Gate OCR*: no one needs to sign in), opens port 8000 to the site network (private
+   and domain networks only) and opens the app at http://localhost:8000. The desktop icon
+   **Gate app** opens it again.
+3. **The first time, the app walks you through setup:**
+   1. choose the **admin password** (username `admin`)
    2. enter the recorder's (NVR) IP address, username and password
    3. tap the camera picture that shows the gate, then drag a box over where trucks pass
 
-   Detection starts on the camera within seconds. Add more cameras on the **Cameras** page
-   (see *Camera placement* below for what makes a good camera).
-7. **Other computers and phones** on the same network: the *Gate app* window shows the
-   address to type, e.g. `http://192.168.1.103:8000`. They sign in with the site password.
-   If Windows asks whether Python may use the network, allow it on **private networks**.
-   Until a site password is chosen, the app opens only on the gate computer itself.
-8. **Optional:** double-click `install_autostart.bat` so everything starts when you sign in
-   to Windows (no administrator rights needed). `uninstall_autostart.bat` undoes it.
+   Detection starts on the camera within seconds. Then set up lanes (below) on the **Cameras**
+   page, and add a user for each gate staff member on the **Users** page.
+4. **Activate:** the **License** page shows this PC's **machine code**. Send it to us, and paste the
+   license key we send back on the same page. Until then the 14-day free trial runs.
+5. **Other computers and phones** on the site network open `http://<gate PC address>:8000` (give
+   the PC a fixed address on the router) and sign in with their username. Until the admin
+   password is chosen, the app opens only on the gate PC itself.
 
-Camera not showing up? `find_cameras.bat` checks the NVR connection, explains network vs.
-login problems and saves a snapshot of every channel to `logs\scan\`.
+Upgrading: run the new `setup.exe`; records and settings stay. Uninstalling keeps `logs\` and
+`cameras.json` too.
 
-## Run the app from a terminal
+Camera not showing up? In the app folder, `python\python.exe cctv.py --scan --config cameras.json`
+checks the NVR connection, explains network vs. login problems and saves a snapshot of every
+channel to `logs\scan\`.
 
-`start_gate.bat` does all of this for you. To run the parts yourself, in the project folder:
+### Building the installer (vendor)
+Needs Python 3.12 and [Inno Setup 6](https://jrsoftware.org/isdl.php) on your PC. In the project folder:
+
+```powershell
+$env:GATE_SIGN_THUMBPRINT = "<your code-signing certificate's thumbprint>"   # leave out for an unsigned test build
+py -3.12 installer/build.py --control-center https://cc.<your-domain>/v1/checkin   # --edition enterprise for Enterprise
+```
+
+The result is `installer\dist\ContainerGateOCR-site-<VERSION>-setup.exe`. A Site installer leaves
+out `src/enterprise/`. The certificate stays in the Windows certificate store or on its USB token,
+never in the repo; signing needs `signtool.exe` from the Windows SDK. `--stage-only` builds the
+app folder in `installer\build\` without the installer, to try it first. Before building
+installers for customers, `PUBLIC_KEYS` in `src/license.py` must hold your real public key.
+
+## Run the app from a terminal (developers, or a PC without the installer)
+
+Install **Python 3.12** (3.13 or newer will **not** work: the OCR package supports up to 3.12),
+get the project (`git clone https://github.com/Muzammil0777/container-gate-ocr.git`), and in
+the project folder:
 
 ```bash
 py -3.12 -m pip install -r requirements.txt
 ```
+
+`start_gate.bat` starts both parts below (`install_autostart.bat`: at Windows sign-in). To run
+them yourself:
 
 **Terminal 1, the app** (stop it with Ctrl+C):
 
@@ -82,8 +99,10 @@ Node.js is **not** needed to run the app: the built web app (`web/dist`) is in t
 |---|---|
 | **Live** | Each camera's picture with its detections and a clear state (*Working*, *No picture for 20 s*, *Stopped*), today's counts and trucks as they're logged, and today's Excel. If detection isn't running, one button starts it. |
 | **Records** | Pick a day and tap a truck to see its **plate close-up and snapshot next to its readings**. *Correct the reading* fixes a wrong plate or container; the Excel files update straight away. *Only trucks to check* lists readings to double-check. Downloads: Excel for the day, Excel + photos (ZIP), Excel for the month. |
-| **Cameras** | Recorder (NVR) login, Excel language, cameras (add / switch off / delete), each camera's reading area drawn on its picture with a test read, and the site password. |
+| **Cameras** | Recorder (NVR) login, Excel language, lanes, cameras (add / switch off / delete, lane and role), each camera's reading area drawn on its picture with a test read. |
 | **Test** | Try photos, a recorded video (played like a gate camera, with an Excel of what it found) or a stream address, plus advanced OCR settings. Nothing here goes into the records. |
+| **Users** | Who can sign in and what they can do: *View* (records, Excel), *Operate* (+ live, fixes), *Admin* (+ cameras, settings, users, license). |
+| **License** | State and end date, users and lanes used, the machine code, the key, and the last check-in with us. |
 
 The language switch (English / العربية) is at the top; Arabic turns the whole page right-to-left.
 Terms like *check digit* have an (i) that explains them.
@@ -93,7 +112,51 @@ digit wasn't confirmed, or one of them is missing. **Fixed** marks rows a person
 Corrections are also kept in `logs\corrections.jsonl` with the photo, for improving accuracy
 later.
 
+## Lanes and camera roles
+
+A **lane** is one way through the gate, e.g. *Entry* (trucks IN) or *Exit* (OUT). Put the cameras
+that see the same truck in one lane: each truck is then logged **once**, with plate and container
+paired by time and checked by every camera of the lane. Without lanes, each camera logs trucks
+on its own.
+
+On the **Cameras** page: *Add a lane* (name, IN or OUT), then for each camera choose its lane and
+what it reads:
+
+| Role | The camera sees | Typical |
+|---|---|---|
+| **Plate** | the number plate | one per lane, facing incoming trucks |
+| **Container** | the container code | up to two per lane, from different sides |
+| **Both** | both | a single camera that sees both |
+
+When two cameras read the same container number, the row is marked **Verified by 2 cameras**.
+The license sets how many lanes you can add (2 in the trial); for more, contact us.
+
+## ANPR cameras
+
+A Hikvision ANPR (LPR) camera works today as a normal **Plate** camera: connect it to the NVR, add
+its channel on the Cameras page and give it the role *Plate*. Set it up for a sharp plate: the
+plate at least 150 px wide, a short shutter (1/1000 s or faster) against motion blur, infrared on
+at night. Taking the plate from the camera's own ANPR result instead of our OCR (no CPU cost on
+the gate PC) is planned (Task 7) after the camera test (Task 2).
+
+## License: before and after the end date
+
+| When | The site sees | Cameras |
+|---|---|---|
+| First 14 days, no key yet | *Free trial* with the days left | read |
+| Key active | *Active*, the end date, users and lanes used | read |
+| 30 days before the end | *Ending soon* | read |
+| End date to 14 days after | *Ended: extra days*, and a banner: the cameras stop in *n* days | read |
+| After that | *Ended*: "the cameras are not being read" | **not read** |
+
+Records, Excel and downloads keep working in every state: a site never loses its
+data. A renewed key (picked up by itself within 15 minutes when the PC has internet, or pasted on
+the License page) starts reading the cameras again. A key works only on the PC whose machine
+code it was made for.
+
 ## Where the data is
+
+On an installed site these are in `C:\Program Files\Container Gate OCR`. Back up `logs\`.
 
 | Path | What |
 |---|---|
@@ -101,7 +164,7 @@ later.
 | `logs\excel\gate_log_YYYY-MM-DD.xlsx` | One Excel per day, rewritten after every truck |
 | `logs\excel\gate_log_YYYY-MM.xlsx` | One Excel per month, for audits |
 | `logs\snapshots\YYYY-MM-DD\` | Truck snapshot and plate close-up for every row |
-| `cameras.json` | Settings, including the NVR password and the site password (stored only as a salted hash). Stays on this computer (git-ignored). |
+| `cameras.json` | Settings, including the NVR password. Stays on this computer (git-ignored). Users and their passwords (salted hashes) are in `logs\gate.db`. |
 
 Opening an Excel file in Excel while trucks are being logged is fine: the data is safe in
 the database, and the file is updated as soon as Excel closes it.
@@ -210,7 +273,7 @@ above) shows each truck's plate and code only for 1–3 seconds, and with charac
 - **Windows DLL error:** if you see `DLL load failed while importing onnxruntime_pybind11_state`,
   another library (pandas/pyarrow did this) was imported before `onnxruntime`. The app avoids
   this by import order.
-- **Plain HTTP on the site network:** the site password protects the app, but traffic isn't
+- **Plain HTTP on the site network:** sign-in protects the app, but traffic isn't
   encrypted. Keep the app on the site's own network; for access from outside, use a VPN such
   as Tailscale rather than opening a port to the internet.
 
@@ -252,14 +315,15 @@ changing it. `py -3.12 -m pytest` runs the tests.
 ويسجّل كل شاحنة تدخل أو تخرج مع التاريخ والوقت والاتجاه ورقم اللوحة (لاتيني وعربي) ورقم الحاوية
 وصورة للشاحنة وصورة للوحة. مجاني ويعمل على معالج الجهاز.
 
-- **التثبيت:** ثبّت Python 3.12، ثم `py -3.12 -m pip install -r requirements.txt`
-- **التشغيل:** انقر مرتين على `start_gate.bat`، فيفتح التطبيق في المتصفح. في المرة الأولى يرشدك
-  التطبيق خطوة بخطوة: اختر كلمة مرور للموقع، ثم أدخل بيانات جهاز التسجيل، ثم اضغط على صورة الكاميرا
-  التي ترى البوابة وحدد منطقة القراءة. أو من سطر الأوامر: `py -3.12 server.py --open` للتطبيق،
-  و`py -3.12 cctv.py --config cameras.json` للكشف
-- **الأجهزة الأخرى والهواتف:** افتح العنوان الظاهر في نافذة *Gate app* (مثل `http://192.168.1.103:8000`)
-  وسجّل الدخول بكلمة مرور الموقع
+- **التثبيت:** شغّل `setup.exe` على جهاز البوابة بصلاحيات المسؤول. يبدأ التطبيق مع تشغيل الجهاز
+  ويفتح في المتصفح. في المرة الأولى يرشدك التطبيق خطوة بخطوة: اختر كلمة مرور المسؤول (اسم المستخدم
+  `admin`)، ثم أدخل بيانات جهاز التسجيل، ثم اضغط على صورة الكاميرا التي ترى البوابة وحدد منطقة القراءة.
+  تجهيز الجهاز والشبكة: [docs/it-checklist.md](docs/it-checklist.md)، ودليل الموظفين: [docs/user-guide.md](docs/user-guide.md)
+- **المسارات:** المسار ممر واحد عبر البوابة (دخول أو خروج). ضع فيه الكاميرات التي ترى الشاحنة نفسها:
+  كاميرا للوحة وحتى كاميرتين للحاوية، فتُسجَّل كل شاحنة مرة واحدة
+- **التفعيل:** أرسل لنا **رمز الجهاز** من صفحة الترخيص، والصق المفتاح الذي نرسله في الصفحة نفسها
+- **بعد تاريخ الانتهاء:** 14 يوماً إضافية، ثم تتوقف قراءة الكاميرات. السجلات وملفات Excel تبقى تعمل دائماً
+- **الأجهزة الأخرى والهواتف:** افتح `http://<عنوان جهاز البوابة>:8000` وسجّل الدخول باسم المستخدم
 - **السجلات:** من صفحة السجلات اضغط على أي شاحنة لعرض صورة اللوحة وصورة الشاحنة وتصحيح القراءة، ونزّل
   ملف Excel لليوم أو للشهر أو ملف ZIP مع الصور
-- **التشغيل التلقائي:** انقر مرتين على `install_autostart.bat`
 - **أهم عامل للدقة هو موقع الكاميرا:** كاميرا قريبة من مسار البوابة تُظهر اللوحة بعرض 150 بكسل على الأقل
