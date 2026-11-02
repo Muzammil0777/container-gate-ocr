@@ -14,6 +14,7 @@ TEXT = {
     'check_digit': ('Check Digit OK', 'رقم التحقق صحيح'),
     'size_type': ('Size/Type', 'الحجم/النوع'),
     'camera': ('Camera', 'الكاميرا'),
+    'imported': ('Imported from Excel', 'مستورد من Excel'),
     'location': ('Location', 'الموقع'),
     'confidence': ('Confidence', 'الدقة'),
     'snapshot': ('Snapshot', 'الصورة'),

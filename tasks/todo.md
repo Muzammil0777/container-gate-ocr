@@ -709,15 +709,15 @@ central edition and its lane count.
 
 ## Phase 11: Extras
 
-### Task 39: Import old gate logs from Excel
+### Task 39: Import old gate logs from Excel ✅
 **Description:** A tool for the paid "Import old Excel logs" service: read a customer's old gate
 log (their columns mapped once: date, time, container, plate, direction), check each container
 number with the check digit, and add the rows to `logs/gate.db` marked as imported (no photos).
 Excel files are then rebuilt from the database as usual.
 
 **Acceptance criteria:**
-- [ ] Re-running the same file adds nothing; rows that can't be read are listed in a report, never dropped silently
-- [ ] Imported rows are marked as such in Records and Excel
+- [x] Re-running the same file adds nothing; rows that can't be read are listed in a report, never dropped silently
+- [x] Imported rows are marked as such in Records and Excel
 
 **Verification:** tests with a small sample workbook.
 **Dependencies:** None (easier after Task 26). **Files:** `tools/import_excel.py`, `src/store.py`, `tests/test_import.py`. **Scope:** M

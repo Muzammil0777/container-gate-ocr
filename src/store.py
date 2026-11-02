@@ -22,7 +22,8 @@ LANE_FIELDS = {'lane': 'TEXT',
                'cams_expected': 'INTEGER',  # container cameras in the lane (2 = can be verified)
                'plate_source': 'TEXT',      # 'anpr' (the plate camera's own reading) or 'ocr'
                'snapshot2': 'TEXT'}         # the second container camera's photo
-ADDED_FIELDS = {**LANE_FIELDS, 'corrected_by': 'TEXT'}  # name of the user who fixed the reading
+ADDED_FIELDS = {**LANE_FIELDS, 'corrected_by': 'TEXT',  # name of the user who fixed the reading
+                'imported': 'TEXT'}  # an old gate log's file name, for rows imported from it (no photos)
 FIELDS = ['date', 'time', 'direction', 'plate', 'plate_ar', 'plate_verified', 'container',
           'check_digit_ok', 'size_type', 'camera', 'location', 'confidence', 'snapshot',
           'plate_image', 'corrected', *ADDED_FIELDS]
@@ -104,6 +105,23 @@ class Store:
                 return 'duplicate', prev['id']
             self._update(prev['id'], updates)
             return 'merged', prev['id']
+
+    def import_rows(self, rows):
+        """Add rows from an old gate log (each with 'imported' set). A row already imported
+        before this call (same date, time, direction, container and plate) is skipped, so
+        re-running the same file adds nothing, while two such rows in one file both stay
+        (two trucks within a minute in a log without seconds). Returns the number added."""
+        keys = ('date', 'time', 'direction', 'container', 'plate')
+        added = 0
+        with self.lock, self.db:
+            have = set(map(tuple, self.db.execute(f"SELECT {', '.join(keys)} FROM trucks WHERE imported IS NOT NULL")))
+            for row in rows:
+                if tuple(row.get(k) for k in keys) in have:
+                    continue
+                self.db.execute(f"INSERT INTO trucks ({', '.join(FIELDS)}) VALUES ({', '.join('?' * len(FIELDS))})",
+                                [row.get(f) for f in FIELDS])
+                added += 1
+        return added
 
     def _recent_match(self, row, dedupe_s):
         when = datetime.strptime(f"{row['date']} {row['time']}", '%Y-%m-%d %H:%M:%S')
@@ -213,8 +231,9 @@ def parse_fix(plate, container, direction):
 def needs_review(row):
     """Readings worth a second look: plate not confirmed by its Arabic row, container check
     digit not confirmed, either one missing, or (in a lane with two container cameras) the
-    container read by only one of them. Rows a person already fixed are fine."""
-    if row.get('corrected'):
+    container read by only one of them. Rows a person already fixed are fine, and so are
+    imported ones (no photos to check against; the import report lists their problems)."""
+    if row.get('corrected') or row.get('imported'):
         return False
     return (not row.get('plate') or not row.get('plate_verified')
             or not row.get('container') or not row.get('check_digit_ok') or not cams_verified(row))
@@ -236,7 +255,8 @@ def display(row, lang='en'):
         'plate_check': '' if not row.get('plate') else t('verified' if row.get('plate_verified') else 'latin_only', lang),
         'container': row.get('container') or '',
         'check_digit': '' if not row.get('container') else yes_no(row.get('check_digit_ok')),
-        'size_type': row.get('size_type') or '', 'camera': row.get('camera') or '',
+        'size_type': row.get('size_type') or '',
+        'camera': t('imported', lang) if row.get('imported') else row.get('camera') or '',
         'location': row.get('location') or '', 'confidence': row.get('confidence'),
         'cams_verified': '' if not row.get('container') or (row.get('cams_expected') or 0) < 2
         else t('cams_agreed', lang, n=row.get('cams_agree')) if cams_verified(row) else t('one_cam_only', lang),
