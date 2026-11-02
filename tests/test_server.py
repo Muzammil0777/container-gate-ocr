@@ -445,6 +445,15 @@ def test_site_password_and_login(monkeypatch):
     assert phone.get('/api/settings').status_code == 401
 
 
+def test_no_session_secret_accepts_no_cookie():
+    local = TestClient(app, client=('127.0.0.1', 50001))
+    local.put('/api/password', json={'new': 'gate1234'})
+    user = app.dependency_overrides[get_store]().user('admin')
+    config.save_config({})                                    # cameras.json reset: the secret is gone
+    local.cookies.set(COOKIE, server._session('00', user, int(time.time()) + 60))
+    assert local.get('/api/settings').status_code == 401
+
+
 def test_login_locks_out_after_many_wrong_tries(monkeypatch):
     monkeypatch.setattr(time, 'sleep', lambda s: None)
     monkeypatch.setattr(server, '_failures', {})
